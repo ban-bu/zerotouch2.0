@@ -8,9 +8,44 @@ const MODELSCOPE_CONFIG = {
   apiKey: 'ms-150d583e-ed00-46d3-ab35-570f03555599'
 }
 
+// 日志辅助函数（避免输出过长内容和敏感信息）
+const truncateForLog = (text, maxLength = 2000) => {
+  if (typeof text !== 'string') return text
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + '…(truncated)'
+}
+
+const formatMessagesForLog = (messages) => {
+  try {
+    return messages.map(m => ({
+      role: m.role,
+      content: truncateForLog(m.content)
+    }))
+  } catch (_) {
+    return '[unserializable messages]'
+  }
+}
+
 // 调用魔搭API的通用函数
 const callModelScopeAPI = async (messages, temperature = 0.7) => {
   try {
+    const isDev = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
+    console.groupCollapsed('[LLM] Request')
+    console.log('model:', MODELSCOPE_CONFIG.model)
+    console.log('temperature:', temperature)
+    console.log('messages:', formatMessagesForLog(messages))
+    console.time('[LLM] latency')
+    if (isDev) {
+      console.group('[LLM] Full Prompt')
+      try {
+        const mergedPrompt = messages.map((m, i) => `#${i + 1} [${m.role}]\n${m.content}`).join('\n\n---\n\n')
+        console.log(mergedPrompt)
+      } catch (_) {}
+      try {
+        console.log('messages JSON:', JSON.stringify(messages, null, 2))
+      } catch (_) {}
+      console.groupEnd()
+    }
     const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -27,13 +62,30 @@ const callModelScopeAPI = async (messages, temperature = 0.7) => {
     })
 
     if (!response.ok) {
+      console.timeEnd('[LLM] latency')
+      console.log('status:', response.status, response.statusText)
       throw new Error(`API调用失败: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
-    return data.choices[0].message.content
+    const content = data?.choices?.[0]?.message?.content
+    console.timeEnd('[LLM] latency')
+    if (data?.usage) console.log('usage:', data.usage)
+    console.log('responseMessage:', truncateForLog(content))
+    if (isDev) {
+      console.group('[LLM] Raw Response')
+      try { console.log('raw JSON:', JSON.stringify(data, null, 2)) } catch (_) {}
+      try { console.log('raw message:', JSON.stringify(data?.choices?.[0]?.message, null, 2)) } catch (_) {}
+      try { console.log('raw content:', data?.choices?.[0]?.message?.content) } catch (_) {}
+      console.groupEnd()
+    }
+    console.groupEnd()
+    return content
   } catch (error) {
+    try { console.groupEnd() } catch (_) {}
+    console.groupCollapsed('[LLM] Error')
     console.error('魔搭API调用错误:', error)
+    console.groupEnd()
     throw error
   }
 }
@@ -189,6 +241,11 @@ const processProblemInput = async (content, image, scenario, chatHistory = []) =
         sections.solutions.map((solution, index) => `${index + 1}. ${solution}`).join('\n')
     }
 
+    console.groupCollapsed('[LLM] Parsed -> problem_input')
+    console.log('structuredOutput:', sections)
+    console.log('translatedMessage:', truncateForLog(translatedMessage))
+    console.groupEnd()
+
     return {
       steps,
       translatedMessage,
@@ -296,6 +353,11 @@ const processSolutionResponse = async (content, scenario, chatHistory = []) => {
       optimizedMessage += '\n\n' + additionalInfo
     }
 
+    console.groupCollapsed('[LLM] Parsed -> solution_response')
+    console.log('structuredOutput:', { optimizedReply, actionSuggestions, additionalInfo })
+    console.log('optimizedMessage:', truncateForLog(optimizedMessage))
+    console.groupEnd()
+
     return {
        steps,
        optimizedMessage,
@@ -401,6 +463,11 @@ const generateEnterpriseSuggestion = async (content, scenario, chatHistory = [])
       suggestionMessage += '\n\n' + implementation
     }
 
+    console.groupCollapsed('[LLM] Parsed -> generate_suggestion')
+    console.log('structuredOutput:', { coreSuggestion, specificPlans, implementation })
+    console.log('suggestionMessage:', truncateForLog(suggestionMessage))
+    console.groupEnd()
+
     return {
       steps,
       suggestionMessage,
@@ -502,6 +569,11 @@ const generateEnterpriseFollowUp = async (content, scenario, chatHistory = []) =
     if (strategy) {
       followUpMessage += '\n\n' + strategy
     }
+
+    console.groupCollapsed('[LLM] Parsed -> generate_followup')
+    console.log('structuredOutput:', { infoGaps, followUpQuestions, strategy })
+    console.log('followUpMessage:', truncateForLog(followUpMessage))
+    console.groupEnd()
 
     return {
       steps,
