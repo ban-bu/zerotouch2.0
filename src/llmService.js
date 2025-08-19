@@ -1,17 +1,16 @@
-// 魔搭LLM处理服务
-// 使用魔搭平台的Qwen2.5-7B-Instruct模型
+// [MODIFIED] Deepbricks LLM处理服务（旧版文件保持兼容接口）
 
-// 魔搭API配置
+// Deepbricks API配置
 const MODELSCOPE_CONFIG = {
-  baseURL: 'https://api-inference.modelscope.cn/v1',
-  model: 'deepseek-ai/DeepSeek-V3',
-  apiKey: 'ms-150d583e-ed00-46d3-ab35-570f03555599'
+  baseURL: 'https://api.deepbricks.ai/v1/',
+  model: 'GPT-4.1-mini',
+  apiKey: 'sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg'
 }
 
 // 调用魔搭API的通用函数
 const callModelScopeAPI = async (messages, temperature = 0.7) => {
   try {
-    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}/chat/completions`, {
+    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -168,12 +167,8 @@ const processProblemInput = async (content, image, scenario, chatHistory = []) =
       })
     }
 
-    // 构建发送给方案端的消息（包含转译和解决方案建议）
-    let translatedMessage = sections.translation || result
-    if (sections.solutions.length > 0) {
-      translatedMessage += '\n\n建议的解决方案：\n' + 
-        sections.solutions.map((solution, index) => `${index + 1}. ${solution}`).join('\n')
-    }
+    // 构建发送给方案端的消息：仅包含需求转译，避免将AI生成的建议再次转译
+    const translatedMessage = sections.translation || result
 
     return {
       steps,

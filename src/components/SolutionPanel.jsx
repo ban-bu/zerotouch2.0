@@ -129,7 +129,10 @@ const SolutionPanel = ({
                       <div className="text-xs font-medium text-blue-700 mb-1">
                         来自LLM的翻译需求
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-blue-600 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
@@ -140,7 +143,10 @@ const SolutionPanel = ({
               
               {message.type === 'user' && (
                 <div className="message-bubble bg-green-100 text-green-900 ml-auto shadow-sm hover:shadow-md transition-all duration-200">
-                  <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                  {/* [MODIFIED] 单条消息滚动容器 */}
+                  <div className="message-content">
+                    <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                  </div>
                   <div className="text-xs text-green-700 mt-1 opacity-75">
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
@@ -155,7 +161,10 @@ const SolutionPanel = ({
                       <div className="text-xs font-medium text-gray-700 mb-1">
                         LLM优化后的响应
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-gray-500 mt-1">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
@@ -173,7 +182,10 @@ const SolutionPanel = ({
                       <div className="text-xs font-medium text-purple-700 mb-1">
                         AI生成的建议
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-purple-600 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
@@ -191,7 +203,10 @@ const SolutionPanel = ({
                       <div className="text-xs font-medium text-orange-700 mb-1">
                         AI生成的追问
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-orange-600 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>

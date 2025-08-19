@@ -1516,8 +1516,8 @@
             try {
                 // 获取最新的对话内容
                 const recentMessages = [
-                    ...APP_STATE.messages.problem.slice(-2),
-                    ...APP_STATE.messages.solution.slice(-2)
+                    ...APP_STATE.messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
+                    ...APP_STATE.messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
                 ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 const currentContent = recentMessages.map(msg => msg.text).join('\n');
@@ -1576,8 +1576,8 @@
             try {
                 // 获取最新的对话内容
                 const recentMessages = [
-                    ...APP_STATE.messages.problem.slice(-2),
-                    ...APP_STATE.messages.solution.slice(-2)
+                    ...APP_STATE.messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
+                    ...APP_STATE.messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
                 ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 const currentContent = recentMessages.map(msg => msg.text).join('\n');
