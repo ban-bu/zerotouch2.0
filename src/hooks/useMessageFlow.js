@@ -45,13 +45,9 @@ export const useMessageFlow = (currentScenario) => {
     try {
       // 构建完整的聊天历史
       const chatHistory = [
-        ...messages.problem
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'problem' })),
-        ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' })),
-        userMessage // 包含当前消息（用户）
+        ...messages.problem.map(msg => ({ ...msg, panel: 'problem' })),
+        ...messages.solution.map(msg => ({ ...msg, panel: 'solution' })),
+        userMessage // 包含当前消息
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 处理用户输入
@@ -115,13 +111,9 @@ export const useMessageFlow = (currentScenario) => {
     try {
       // 构建完整的聊天历史
       const chatHistory = [
-        ...messages.problem
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'problem' })),
-        ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' })),
-        userMessage // 包含当前消息（企业方输入）
+        ...messages.problem.map(msg => ({ ...msg, panel: 'problem' })),
+        ...messages.solution.map(msg => ({ ...msg, panel: 'solution' })),
+        userMessage // 包含当前消息
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 处理方案端响应
@@ -178,20 +170,16 @@ export const useMessageFlow = (currentScenario) => {
     try {
       // 获取最新的对话内容
       const recentMessages = [
-        ...messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
-        ...messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
+        ...messages.problem.slice(-2),
+        ...messages.solution.slice(-2)
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       const currentContent = recentMessages.map(msg => msg.text).join('\n')
 
       // 构建聊天历史
       const chatHistory = [
-        ...messages.problem
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'problem' })),
-        ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' }))
+        ...messages.problem.map(msg => ({ ...msg, panel: 'problem' })),
+        ...messages.solution.map(msg => ({ ...msg, panel: 'solution' }))
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 生成建议
@@ -250,20 +238,16 @@ export const useMessageFlow = (currentScenario) => {
     try {
       // 获取最新的对话内容
       const recentMessages = [
-        ...messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
-        ...messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
+        ...messages.problem.slice(-2),
+        ...messages.solution.slice(-2)
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       const currentContent = recentMessages.map(msg => msg.text).join('\n')
 
       // 构建聊天历史
       const chatHistory = [
-        ...messages.problem
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'problem' })),
-        ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' }))
+        ...messages.problem.map(msg => ({ ...msg, panel: 'problem' })),
+        ...messages.solution.map(msg => ({ ...msg, panel: 'solution' }))
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 生成追问
@@ -322,12 +306,8 @@ export const useMessageFlow = (currentScenario) => {
     try {
       // 构建聊天历史
       const chatHistory = [
-        ...messages.problem
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'problem' })),
-        ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' }))
+        ...messages.problem.map(msg => ({ ...msg, panel: 'problem' })),
+        ...messages.solution.map(msg => ({ ...msg, panel: 'solution' }))
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 处理最终响应

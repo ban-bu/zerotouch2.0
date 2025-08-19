@@ -1,13 +1,11 @@
-// [MODIFIED] Deepbricks LLM处理服务
-// Impact: 切换到 Deepbricks API，模型 GPT-4.1-mini
-// Backward Compatibility: 保留原有函数/常量命名与请求结构，调用方无需改动
+// 魔搭LLM处理服务
+// 使用魔搭平台的Qwen2.5-7B-Instruct模型
 
-// Deepbricks API配置
+// 魔搭API配置
 const MODELSCOPE_CONFIG = {
-  // [MODIFIED]
-  baseURL: 'https://api.deepbricks.ai/v1/',
-  model: 'GPT-4.1-mini',
-  apiKey: 'sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg'
+  baseURL: 'https://api-inference.modelscope.cn/v1',
+  model: 'deepseek-ai/DeepSeek-V3',
+  apiKey: 'ms-150d583e-ed00-46d3-ab35-570f03555599'
 }
 
 // 日志辅助函数（避免输出过长内容和敏感信息）
@@ -33,7 +31,7 @@ const callModelScopeAPI = async (messages, temperature = 0.7) => {
   try {
     const isDev = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
     console.groupCollapsed('[LLM] Request')
-    console.log('model:', MODELSCOPE_CONFIG.model) // [MODIFIED]
+    console.log('model:', MODELSCOPE_CONFIG.model)
     console.log('temperature:', temperature)
     console.log('messages:', formatMessagesForLog(messages))
     console.time('[LLM] latency')
@@ -48,8 +46,7 @@ const callModelScopeAPI = async (messages, temperature = 0.7) => {
       } catch (_) {}
       console.groupEnd()
     }
-    // [MODIFIED] Deepbricks 兼容 OpenAI Chat Completions 路由
-    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}chat/completions`, {
+    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -129,86 +126,14 @@ const sanitizeOutput = (text) => {
   return sanitized.trim()
 }
 
-// [MODIFIED] 健壮的解析与剥离工具，避免将AI建议再次转译
-// Impact: 确保发往方案端(`solution`)的 `llm_request` 仅包含「需求转译」文本
-// Backward Compatibility: 不改变对外API，仅增强解析鲁棒性
-const findFirstIndex = (text, keywords) => {
-  for (const keyword of keywords) {
-    const idx = text.indexOf(keyword)
-    if (idx !== -1) return { idx, keyword }
-  }
-  return { idx: -1, keyword: '' }
-}
-
-const parseSectionsRobust = (raw) => {
-  const text = typeof raw === 'string' ? raw : ''
-  const sections = {
-    translation: '',
-    solutionsText: '',
-    confirmationsText: ''
-  }
-
-  // 多标题兼容
-  const translationKeys = ['【需求转译】', '【需求翻译】', '【转译结果】', '【需求澄清】', '需求转译', '需求翻译', '转译结果', '需求澄清', '客户需求转译', '用户需求转译']
-  const solutionKeys = ['【解决方案建议】', '【建议方案】', '【行动建议】', '解决方案建议', '建议的解决方案', '方案建议', '行动建议']
-  const confirmKeys = ['【待确认信息】', '【需确认信息】', '【待确认】', '待确认信息', '需确认信息']
-
-  const t = findFirstIndex(text, translationKeys)
-  const s = findFirstIndex(text, solutionKeys)
-  const c = findFirstIndex(text, confirmKeys)
-
-  const endOf = (startIdx) => {
-    if (startIdx === -1) return text.length
-    const candidates = [s.idx, c.idx, text.length].filter((v) => v !== -1 && v > startIdx)
-    return Math.min(...candidates)
-  }
-
-  // 取需求转译
-  if (t.idx !== -1) {
-    const start = t.idx + t.keyword.length
-    const end = endOf(t.idx)
-    sections.translation = text.slice(start, end).trim()
-  } else if (s.idx !== -1) {
-    // 未找到转译标题，但找到方案标题：取方案之前内容作为转译
-    sections.translation = text.slice(0, s.idx).trim()
-  }
-
-  // 取方案建议（中介面板展示用）
-  if (s.idx !== -1) {
-    const start = s.idx + s.keyword.length
-    const end = c.idx !== -1 ? c.idx : text.length
-    sections.solutionsText = text.slice(start, end).trim()
-  }
-
-  // 取待确认信息（中介面板展示用）
-  if (c.idx !== -1) {
-    const start = c.idx + c.keyword.length
-    sections.confirmationsText = text.slice(start).trim()
-  }
-
-  // 兜底：若仍未抽取到转译，尽量剥离明显“方案/建议”段落
-  if (!sections.translation) {
-    const firstSolutionIdx = s.idx !== -1 ? s.idx : text.search(/\n?\s*(方案|选项|建议)\s*[1-9]/)
-    if (firstSolutionIdx !== -1 && firstSolutionIdx > 0) {
-      sections.translation = text.slice(0, firstSolutionIdx).trim()
-    } else {
-      const truncated = text.slice(0, 500)
-      const split = truncated.split(/\n{2,}/)
-      sections.translation = (split[0] || truncated).trim()
-    }
-  }
-
-  return sections
-}
-
 // 处理问题端输入 - 增强版本，支持聊天历史和深度理解
 const processProblemInput = async (content, image, scenario, chatHistory = []) => {
   try {
     // 根据场景定制提示词 - 增强版本
     const scenarioPrompts = {
       retail: {
-        systemRole: '你是一个专业的AI沟通助手，专门在顾客与企业门店之间提供精准的需求转译和解决方案建议。你的核心职责是：1)准确理解顾客的真实需求和潜在意图 2)将其转化为企业能够理解和执行的专业描述 3)基于企业能力提供具体可行的解决方案选项。',
-        context: '场景边界：零售顾客-门店沟通。你需要同时理解双方可能存在的表达偏差：顾客可能表达不清晰或有隐含需求，企业可能用专业术语回复。\n\n核心任务：\n1. 深度理解：分析顾客的显性需求和隐性需求，识别可能的表达偏差\n2. 精准转译：将顾客需求转化为包含产品类型、使用场景、预算范围、规格要求等关键信息的专业描述\n3. 方案建议：基于转译结果，为企业提供2-3个具体可行的解决方案选项，包含产品推荐、服务建议、价格区间等',
+        systemRole: '你是一个专业的AI沟通助手，专门在顾客与企业门店之间提供精准的需求转译和解决方案建议。不要无中生有出没有表达胡意思、没有确认的方案，你的核心职责是：1)准确理解顾客的真实需求和潜在意图（要先搞清楚顾客是属于售前、售中、还是售后，然后用相应准确的话术进行沟通，特别不要把售后看是售前咨询） 2)将其忠实地转译为企业能够理解和执行的专业描述，并保留用户提问的原始意图和关键信息，避免将用户的问题转化为AI的反问 3)必须提供基于企业能力提供具体可行的解决方案选项。',
+        context: '场景边界：零售顾客-门店沟通。你需要同时理解双方可能存在的表达偏差：顾客可能表达不清晰或有隐含需求，企业可能用专业术语回复。\n\n核心任务：\n1. 深度理解：分析顾客的显性需求和隐性需求，识别可能的表达偏差\n2. 精准转译：如果是售前售中的，将顾客需求转化为包含产品类型、使用场景、预算范围、规格要求等关键信息的专业描述。如果是售后的，特别要注意话术语气，要搞清楚顾客买的是什么产品、什么时候买的、反映主要的问题是什么？顾客的具体索求是什么等。在转译时，务必忠实于用户提问的原始意图和关键信息，避免将用户的问题转化为AI的反问。\n3. 方案建议：基于转译结果，为企业提供2-3个具体可行的解决方案选项，包含产品推荐、服务建议、价格区间等,但对双方没有明确确定采纳的方案建议不能进一步向对方转述或自行采纳',
         example: '例如：顾客说"我需要一件适合商务场合的衣服" → 转译："顾客需要商务正装，用于重要会议，预算待确认，需要专业形象" → 方案建议："1)推荐经典商务西装套装，价格800-1500元，包含免费修改服务 2)推荐商务休闲装，价格500-800元，适合日常商务场合 3)提供个人形象顾问服务，根据具体需求定制搭配方案"'
       },
       enterprise: {
@@ -258,43 +183,73 @@ const processProblemInput = async (content, image, scenario, chatHistory = []) =
     const resultRaw = await callModelScopeAPI(comprehensivePrompt, 0.1)
     const result = sanitizeOutput(resultRaw)
 
-    // [MODIFIED] 使用健壮解析，避免将AI建议再次转译
-    // Impact: 仅将「需求转译」转发给企业端；中介面板仍展示建议和待确认信息
-    // Backward Compatibility: 返回结构字段保持一致
-    const parsed = parseSectionsRobust(result)
+    // 解析结构化输出
+    const sections = {
+      translation: '',
+      solutions: [],
+      confirmations: ''
+    }
+    
+    // 提取需求转译部分
+    const translationMatch = result.match(/【需求转译】\s*([\s\S]*?)(?=【解决方案建议】|$)/)
+    if (translationMatch) {
+      sections.translation = translationMatch[1].trim()
+    }
+    
+    // 提取解决方案建议部分
+    const solutionsMatch = result.match(/【解决方案建议】\s*([\s\S]*?)(?=【待确认信息】|$)/)
+    if (solutionsMatch) {
+      const solutionsText = solutionsMatch[1].trim()
+      const solutionMatches = solutionsText.match(/方案[1-3]：([^\n]+)/g)
+      if (solutionMatches) {
+        sections.solutions = solutionMatches.map(match => match.replace(/方案[1-3]：/, '').trim())
+      }
+    }
+    
+    // 提取待确认信息部分
+    const confirmationsMatch = result.match(/【待确认信息】\s*([\s\S]*?)$/)
+    if (confirmationsMatch) {
+      sections.confirmations = confirmationsMatch[1].trim()
+    }
 
-    // 构建详细步骤（给中介面板）
+    // 构建详细的步骤显示
     const steps = [
       {
         name: '需求分析与转译',
-        content: parsed.translation
+        content: sections.translation || result
       }
     ]
-    if (parsed.solutionsText) {
+    
+    if (sections.solutions.length > 0) {
       steps.push({
         name: '解决方案建议',
-        content: parsed.solutionsText
+        content: sections.solutions.map((solution, index) => `方案${index + 1}：${solution}`).join('\n\n')
       })
     }
-    if (parsed.confirmationsText && parsed.confirmationsText !== '无') {
+    
+    if (sections.confirmations && sections.confirmations !== '无') {
       steps.push({
         name: '待确认信息',
-        content: parsed.confirmationsText
+        content: sections.confirmations
       })
     }
 
-    // 仅将「需求转译」发往方案端
-    const translatedMessage = parsed.translation
+    // 构建发送给方案端的消息（包含转译和解决方案建议）
+    let translatedMessage = sections.translation || result
+    if (sections.solutions.length > 0) {
+      translatedMessage += '\n\n建议的解决方案：\n' + 
+        sections.solutions.map((solution, index) => `${index + 1}. ${solution}`).join('\n')
+    }
 
     console.groupCollapsed('[LLM] Parsed -> problem_input')
-    console.log('structuredOutput:', parsed)
+    console.log('structuredOutput:', sections)
     console.log('translatedMessage:', truncateForLog(translatedMessage))
     console.groupEnd()
 
     return {
       steps,
       translatedMessage,
-      structuredOutput: parsed
+      structuredOutput: sections
     }
   } catch (error) {
     console.error('处理问题输入时出错:', error)

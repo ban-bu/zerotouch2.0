@@ -112,12 +112,6 @@ const LLMPanel = ({ processing, messages }) => {
                       </div>
                       <span>处理完成</span>
                     </div>
-                    {/* [MODIFIED] 展示LLM输出摘要时的滚动容器（若后续加入output内容） */}
-                    {message.output && (
-                      <div className="message-content mt-2 text-sm text-secondary-700 dark:text-secondary-300">
-                        <pre className="whitespace-pre-wrap">{message.output}</pre>
-                      </div>
-                    )}
                   </div>
                   
                   <div className="text-xs text-secondary-600 mt-2">
