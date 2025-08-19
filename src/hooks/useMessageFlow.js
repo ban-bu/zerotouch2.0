@@ -43,15 +43,18 @@ export const useMessageFlow = (currentScenario) => {
     setLlmProcessing(true)
 
     try {
-      // 构建完整的聊天历史
+      // 构建完整的聊天历史 - 包含翻译后的真实内容
       const chatHistory = [
         ...messages.problem
           .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
           .map(msg => ({ ...msg, panel: 'problem' })),
         ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
+          .filter(msg => msg.type === 'user' || msg.type === 'ai_response' || msg.type === 'llm_request')
           .map(msg => ({ ...msg, panel: 'solution' })),
-        userMessage // 包含当前消息（用户）
+        ...messages.llm
+          .filter(msg => msg.type === 'processing' && msg.output)
+          .map(msg => ({ type: 'llm_processing', text: msg.output, timestamp: msg.timestamp, panel: 'llm' })),
+        { ...userMessage, panel: 'problem' } // 包含当前消息（用户）
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 处理用户输入
@@ -113,15 +116,18 @@ export const useMessageFlow = (currentScenario) => {
     setLlmProcessing(true)
 
     try {
-      // 构建完整的聊天历史
+      // 构建完整的聊天历史 - 包含翻译后的真实内容
       const chatHistory = [
         ...messages.problem
           .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
           .map(msg => ({ ...msg, panel: 'problem' })),
         ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
+          .filter(msg => msg.type === 'user' || msg.type === 'ai_response' || msg.type === 'llm_request')
           .map(msg => ({ ...msg, panel: 'solution' })),
-        userMessage // 包含当前消息（企业方输入）
+        ...messages.llm
+          .filter(msg => msg.type === 'processing' && msg.output)
+          .map(msg => ({ type: 'llm_processing', text: msg.output, timestamp: msg.timestamp, panel: 'llm' })),
+        { ...userMessage, panel: 'solution' } // 包含当前消息（企业方输入）
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 处理方案端响应
@@ -184,14 +190,17 @@ export const useMessageFlow = (currentScenario) => {
 
       const currentContent = recentMessages.map(msg => msg.text).join('\n')
 
-      // 构建聊天历史
+      // 构建聊天历史 - 包含翻译后的真实内容
       const chatHistory = [
         ...messages.problem
           .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
           .map(msg => ({ ...msg, panel: 'problem' })),
         ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' }))
+          .filter(msg => msg.type === 'user' || msg.type === 'ai_response' || msg.type === 'llm_request')
+          .map(msg => ({ ...msg, panel: 'solution' })),
+        ...messages.llm
+          .filter(msg => msg.type === 'processing' && msg.output)
+          .map(msg => ({ type: 'llm_processing', text: msg.output, timestamp: msg.timestamp, panel: 'llm' }))
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 生成建议
@@ -256,14 +265,17 @@ export const useMessageFlow = (currentScenario) => {
 
       const currentContent = recentMessages.map(msg => msg.text).join('\n')
 
-      // 构建聊天历史
+      // 构建聊天历史 - 包含翻译后的真实内容
       const chatHistory = [
         ...messages.problem
           .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
           .map(msg => ({ ...msg, panel: 'problem' })),
         ...messages.solution
-          .filter(msg => msg.type === 'user' || msg.type === 'ai_response')
-          .map(msg => ({ ...msg, panel: 'solution' }))
+          .filter(msg => msg.type === 'user' || msg.type === 'ai_response' || msg.type === 'llm_request')
+          .map(msg => ({ ...msg, panel: 'solution' })),
+        ...messages.llm
+          .filter(msg => msg.type === 'processing' && msg.output)
+          .map(msg => ({ type: 'llm_processing', text: msg.output, timestamp: msg.timestamp, panel: 'llm' }))
       ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
 
       // 生成追问
