@@ -134,6 +134,16 @@ body {
   border-radius: 12px;
 }
 
+/* [MODIFIED] 单条消息可滚动查看长文本 */
+/* Impact: 为过长消息提供纵向滚动条，避免撑高对话布局 */
+/* Backward Compatibility: 仅新增类，不影响现有样式 */
+.message-content {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
 .dark .message-ai {
   @apply bg-gray-800 text-gray-200 border-gray-700;
 }
@@ -291,6 +301,9 @@ body {
 @media (max-width: 768px) {
   .message-bubble {
     @apply max-w-full;
+  }
+  .message-content {
+    max-height: 200px;
   }
   
   .panel {

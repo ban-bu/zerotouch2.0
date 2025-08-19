@@ -2,8 +2,8 @@
 # 将此文件复制到/etc/nginx/sites-available/并创建软链接到/etc/nginx/sites-enabled/
 
 server {
-    listen 80;
-    server_name zerotouch.example.com; # 替换为您的域名
+    listen 8080;
+    server_name _;
 
     # 启用gzip压缩
     gzip on;
@@ -19,14 +19,14 @@ server {
 
     # 静态文件缓存设置
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-        root /var/www/zerotouch/dist;
+        root /usr/share/nginx/html;
         expires 30d;
         add_header Cache-Control "public, no-transform";
     }
 
     # 主应用路径
     location / {
-        root /var/www/zerotouch/dist;
+        root /usr/share/nginx/html;
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
