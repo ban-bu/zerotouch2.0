@@ -233,7 +233,26 @@ const processProblemInput = async (content, image, scenario, chatHistory = []) =
     if (chatHistory && chatHistory.length > 0) {
       chatContext = '\n\n聊天历史上下文：\n' + 
         chatHistory.slice(-6).map((msg, index) => {
-          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : 'AI处理'
+          // 根据面板和场景正确判断角色 - 区分原话和实际看到的内容
+          let role = 'AI处理'
+          if (msg.type === 'user') {
+            if (msg.panel === 'problem') {
+              role = scenario === 'retail' ? '顾客原话' : scenario === 'enterprise' ? '市场部原话' : '学生原话'
+            } else if (msg.panel === 'solution') {
+              role = scenario === 'retail' ? '门店人员原话' : scenario === 'enterprise' ? '研发部原话' : '教师原话'
+            } else {
+              role = scenario === 'retail' ? '顾客原话' : scenario === 'enterprise' ? '市场部原话' : '学生原话'
+            }
+          } else if (msg.type === 'llm_request') {
+            // 这是翻译后方案端实际看到的内容
+            role = scenario === 'retail' ? '门店实际看到' : scenario === 'enterprise' ? '研发部实际看到' : '教师实际看到'
+          } else if (msg.type === 'ai_response') {
+            // 这是优化后问题端实际看到的内容
+            role = scenario === 'retail' ? '顾客实际看到' : scenario === 'enterprise' ? '市场部实际看到' : '学生实际看到'
+          } else if (msg.type === 'llm_processing') {
+            // 这是LLM的处理输出
+            role = 'AI翻译输出'
+          }
           return `${index + 1}. ${role}: ${msg.text}`
         }).join('\n')
     }
@@ -335,7 +354,26 @@ const processSolutionResponse = async (content, scenario, chatHistory = []) => {
     if (chatHistory && chatHistory.length > 0) {
       chatContext = '\n\n聊天历史上下文：\n' + 
         chatHistory.slice(-6).map((msg, index) => {
-          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          // 根据面板和场景正确判断角色 - 区分原话和实际看到的内容
+          let role = 'AI处理'
+          if (msg.type === 'user') {
+            if (msg.panel === 'problem') {
+              role = scenario === 'retail' ? '顾客原话' : scenario === 'enterprise' ? '市场部原话' : '学生原话'
+            } else if (msg.panel === 'solution') {
+              role = scenario === 'retail' ? '门店人员原话' : scenario === 'enterprise' ? '研发部原话' : '教师原话'
+            } else {
+              role = scenario === 'retail' ? '顾客原话' : scenario === 'enterprise' ? '市场部原话' : '学生原话'
+            }
+          } else if (msg.type === 'llm_request') {
+            // 这是翻译后方案端实际看到的内容
+            role = scenario === 'retail' ? '门店实际看到' : scenario === 'enterprise' ? '研发部实际看到' : '教师实际看到'
+          } else if (msg.type === 'ai_response') {
+            // 这是优化后问题端实际看到的内容
+            role = scenario === 'retail' ? '顾客实际看到' : scenario === 'enterprise' ? '市场部实际看到' : '学生实际看到'
+          } else if (msg.type === 'llm_processing') {
+            // 这是LLM的处理输出
+            role = 'AI翻译输出'
+          }
           return `${index + 1}. ${role}: ${msg.text}`
         }).join('\n')
     }
@@ -451,7 +489,21 @@ const generateEnterpriseSuggestion = async (content, scenario, chatHistory = [])
     if (chatHistory && chatHistory.length > 0) {
       chatContext = '\n\n对话历史：\n' + 
         chatHistory.slice(-4).map((msg, index) => {
-          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          // 根据面板和场景正确判断角色
+          let role = 'AI处理'
+          if (msg.type === 'user') {
+            if (msg.panel === 'problem') {
+              role = scenario === 'retail' ? '顾客' : scenario === 'enterprise' ? '市场部' : '学生'
+            } else if (msg.panel === 'solution') {
+              role = scenario === 'retail' ? '门店人员' : scenario === 'enterprise' ? '研发部' : '教师'
+            } else {
+              role = scenario === 'retail' ? '顾客' : scenario === 'enterprise' ? '市场部' : '学生'
+            }
+          } else if (msg.type === 'ai_response') {
+            role = 'AI优化回复'
+          } else if (msg.type === 'llm_request') {
+            role = '需求转译'
+          }
           return `${index + 1}. ${role}: ${msg.text}`
         }).join('\n')
     }
@@ -561,7 +613,21 @@ const generateEnterpriseFollowUp = async (content, scenario, chatHistory = []) =
     if (chatHistory && chatHistory.length > 0) {
       chatContext = '\n\n对话历史：\n' + 
         chatHistory.slice(-4).map((msg, index) => {
-          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          // 根据面板和场景正确判断角色
+          let role = 'AI处理'
+          if (msg.type === 'user') {
+            if (msg.panel === 'problem') {
+              role = scenario === 'retail' ? '顾客' : scenario === 'enterprise' ? '市场部' : '学生'
+            } else if (msg.panel === 'solution') {
+              role = scenario === 'retail' ? '门店人员' : scenario === 'enterprise' ? '研发部' : '教师'
+            } else {
+              role = scenario === 'retail' ? '顾客' : scenario === 'enterprise' ? '市场部' : '学生'
+            }
+          } else if (msg.type === 'ai_response') {
+            role = 'AI优化回复'
+          } else if (msg.type === 'llm_request') {
+            role = '需求转译'
+          }
           return `${index + 1}. ${role}: ${msg.text}`
         }).join('\n')
     }
@@ -569,7 +635,7 @@ const generateEnterpriseFollowUp = async (content, scenario, chatHistory = []) =
     const comprehensivePrompt = [
       {
         role: 'system',
-        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成追问的指导原则：\n1. 基于当前对话内容，识别信息缺口\n2. 生成3-5个有针对性的追问\n3. 追问要具体、明确，避免模糊表达\n4. 按照重要性排序\n5. 使用友好的语气，避免过于直接\n6. 风格限制：禁止输出“感谢您的反馈/我们非常重视/如需帮助请联系”等客服模板话术，只专注于针对性信息澄清。`
+        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成追问的指导原则：\n1. 基于当前对话内容，识别信息缺口\n2. 生成3-5个有针对性的追问\n3. 追问要具体、明确，避免模糊表达\n4. 按照重要性排序\n5. 使用友好的语气，避免过于直接\n6. 风格限制：禁止输出"感谢您的反馈/我们非常重视/如需帮助请联系"等客服模板话术，只专注于针对性信息澄清。`
       },
       {
         role: 'user',
