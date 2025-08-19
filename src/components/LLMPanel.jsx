@@ -14,21 +14,34 @@ const LLMPanel = ({ processing, messages }) => {
     scrollToBottom()
   }, [messages])
 
-  const getStepIcon = (step) => {
-    switch (step) {
-      case '原始输入分析':
-        return <Layers className="w-4 h-4 text-blue-600" />
-      case '语境解读':
-        return <Lightbulb className="w-4 h-4 text-yellow-600" />
-      case '概念化':
-        return <Sparkles className="w-4 h-4 text-purple-600" />
-      case '情感过滤':
-        return <Filter className="w-4 h-4 text-red-600" />
-      case '缺失信息检测':
-        return <Zap className="w-4 h-4 text-orange-600" />
-      default:
-        return <Bot className="w-4 h-4 text-gray-600" />
+  const getProcessingIcon = (title) => {
+    if (title.includes('问题端')) {
+      return <Layers className="w-4 h-4 text-blue-600" />
+    } else if (title.includes('方案端')) {
+      return <Zap className="w-4 h-4 text-green-600" />
+    } else if (title.includes('建议')) {
+      return <Lightbulb className="w-4 h-4 text-purple-600" />
+    } else if (title.includes('追问')) {
+      return <Filter className="w-4 h-4 text-orange-600" />
+    } else if (title.includes('最终')) {
+      return <ArrowRight className="w-4 h-4 text-indigo-600" />
     }
+    return <Bot className="w-4 h-4 text-gray-600" />
+  }
+
+  const getProcessingStatus = (title) => {
+    if (title.includes('问题端')) {
+      return '正在分析客户需求...'
+    } else if (title.includes('方案端')) {
+      return '正在优化企业回复...'
+    } else if (title.includes('建议')) {
+      return '正在生成专业建议...'
+    } else if (title.includes('追问')) {
+      return '正在生成追问问题...'
+    } else if (title.includes('最终')) {
+      return '正在处理最终回复...'
+    }
+    return '正在处理...'
   }
 
   return (
@@ -83,39 +96,29 @@ const LLMPanel = ({ processing, messages }) => {
           <AnimatedTransition key={index} type="slide-left" show={true}>
             <div className="message-bubble message-system">
               <div className="flex items-start space-x-2">
-                <Bot className="w-4 h-4 text-secondary-700 mt-0.5 flex-shrink-0" />
+                {getProcessingIcon(message.title)}
                 <div className="flex-1">
                   <div className="font-medium text-secondary-800 mb-1">
-                    {message.title}
+                    {getProcessingStatus(message.title)}
                   </div>
                   
-                  {message.steps && (
-                    <div className="space-y-3 mt-2">
-                      {message.steps.map((step, stepIndex) => (
-                        <div key={stepIndex} className="bg-white rounded-md p-3 border border-secondary-100">
-                          <div className="flex items-center space-x-2 mb-2 text-sm font-medium text-secondary-800">
-                            {getStepIcon(step.name)}
-                            <span>{step.name}</span>
-                          </div>
-                          <div className="text-sm whitespace-pre-wrap pl-6">
-                            {step.content}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {message.output && (
-                    <div className="mt-3 bg-white rounded-md p-3 border border-secondary-100">
-                      <div className="flex items-center space-x-2 mb-2 text-sm font-medium text-secondary-800">
-                        <Zap className="w-4 h-4 text-secondary-600" />
-                        <span>输出</span>
+                  {/* 简化的进度显示 */}
+                  <div className="mt-2">
+                    <div className="flex items-center space-x-2 text-sm text-secondary-600">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                        <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                       </div>
-                      <div className="text-sm whitespace-pre-wrap pl-6">
-                        {message.output}
-                      </div>
+                      <span>处理完成</span>
                     </div>
-                  )}
+                    {/* [MODIFIED] 展示LLM输出摘要时的滚动容器（若后续加入output内容） */}
+                    {message.output && (
+                      <div className="message-content mt-2 text-sm text-secondary-700 dark:text-secondary-300">
+                        <pre className="whitespace-pre-wrap">{message.output}</pre>
+                      </div>
+                    )}
+                  </div>
                   
                   <div className="text-xs text-secondary-600 mt-2">
                     {new Date(message.timestamp).toLocaleTimeString()}
@@ -129,7 +132,14 @@ const LLMPanel = ({ processing, messages }) => {
         {processing && (
           <AnimatedTransition type="fade" show={true}>
             <div className="p-4 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20">
-              <LLMProcessingLoader />
+              <div className="flex items-center space-x-3">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
+                <span className="text-sm text-purple-700 dark:text-purple-300">AI正在处理中...</span>
+              </div>
             </div>
           </AnimatedTransition>
         )}

@@ -319,6 +319,18 @@
             border: 1px solid #6366f1;
         }
 
+        .message.suggestion {
+            background: linear-gradient(135deg, #f3e8ff, #e9d5ff);
+            color: #7c3aed;
+            border: 1px solid #a855f7;
+        }
+
+        .message.followup {
+            background: linear-gradient(135deg, #fff7ed, #fed7aa);
+            color: #ea580c;
+            border: 1px solid #f97316;
+        }
+
         .message-meta {
             font-size: 0.75rem;
             color: #6b7280;
@@ -739,6 +751,17 @@
                     <div class="panel-subtitle">提供解决方案</div>
                 </div>
                 
+                <!-- 迭代模式提示 -->
+                <div id="iterationModeTip" class="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800" style="display: none;">
+                    <div class="flex items-center space-x-2 text-blue-800 dark:text-blue-200">
+                        <i class="fas fa-lightbulb"></i>
+                        <span class="text-sm font-medium">迭代模式 - 请确认最终回复内容</span>
+                    </div>
+                    <p class="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                        您可以继续编辑内容，确认无误后点击"确认发送"将回复发送给客户
+                    </p>
+                </div>
+                
                 <div class="messages-container" id="solutionMessages">
                     <div class="message ai">
                         <div>我是专业的顾问，准备为您提供最佳的解决方案。</div>
@@ -746,7 +769,45 @@
                     </div>
                 </div>
                 
-                <div class="input-container">
+                <!-- 迭代模式下的操作按钮 -->
+                <div id="iterationModeControls" class="p-4 border-t border-gray-200 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-900/20" style="display: none;">
+                    <div class="space-y-3">
+                        <div class="flex items-center space-x-2 text-yellow-800 dark:text-yellow-200">
+                            <i class="fas fa-lightbulb"></i>
+                            <span class="text-sm font-medium">编辑最终回复内容</span>
+                        </div>
+                        
+                        <textarea
+                            id="finalResponseInput"
+                            placeholder="编辑最终回复内容..."
+                            class="input-field resize-none transition-all duration-200 focus:shadow-md"
+                            rows="4"
+                        ></textarea>
+                        
+                        <div class="flex space-x-2">
+                            <button
+                                id="confirmSendBtn"
+                                class="flex-1 btn-primary p-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200 hover:scale-105 flex items-center justify-center space-x-2"
+                                title="确认发送给客户"
+                            >
+                                <i class="fas fa-check-circle"></i>
+                                <span>确认发送</span>
+                            </button>
+                            
+                            <button
+                                id="cancelIterationBtn"
+                                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                                title="取消迭代"
+                            >
+                                <i class="fas fa-times-circle"></i>
+                                <span>取消</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 常规输入区域 -->
+                <div id="regularInputContainer" class="input-container">
                     <div class="input-wrapper">
                         <textarea 
                             class="input-field" 
@@ -756,6 +817,27 @@
                         ></textarea>
                         <button class="send-btn" id="solutionSendBtn">
                             <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- 新增：AI辅助按钮 -->
+                    <div class="flex space-x-2 mt-3">
+                        <button
+                            id="generateSuggestionBtn"
+                            class="flex-1 px-3 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                            title="AI生成建议"
+                        >
+                            <i class="fas fa-lightbulb"></i>
+                            <span>生成相应建议</span>
+                        </button>
+                        
+                        <button
+                            id="generateFollowUpBtn"
+                            class="flex-1 px-3 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                            title="AI生成追问"
+                        >
+                            <i class="fas fa-comment-dots"></i>
+                            <span>生成相应追问</span>
                         </button>
                     </div>
                 </div>
@@ -824,6 +906,9 @@
             currentScenario: 'retail',
             isConnected: true,
             llmProcessing: false,
+            iterationProcessing: false, // 新增：迭代处理状态
+            iterationMode: false, // 新增：迭代模式状态
+            pendingResponse: null, // 新增：待发送的响应
             settings: {
                 darkMode: false,
                 fontSize: 'medium',
@@ -1036,6 +1121,92 @@
             };
         }
 
+        // 新增：生成企业端建议
+        async function generateEnterpriseSuggestion(content, scenario) {
+            const scenarioPrompts = {
+                retail: {
+                    systemRole: '你是一位专业的零售顾问，专门为企业门店提供销售建议和解决方案。',
+                    context: '基于客户的需求和企业的情况，提供专业的销售建议，包括产品推荐、价格策略、服务方案等。',
+                    example: '客户需求："需要商务西装，预算800-1500元"\n建议："建议推荐三款产品：1)经典款A123，售价1280元，意大利面料，免费修改；2)现代款B456，售价1150元，舒适透气；3)高端款C789，售价1350元，时尚剪裁。重点推荐A123，性价比最高，适合商务场合。"'
+                },
+                enterprise: {
+                    systemRole: '你是一位专业的企业技术顾问，专门为技术团队提供解决方案建议。',
+                    context: '基于业务需求和技术现状，提供技术方案建议，包括架构设计、技术选型、实施计划等。',
+                    example: '业务需求："提升用户体验，3个月内完成"\n建议："建议采用渐进式优化方案：第一阶段(1个月)优化现有界面，第二阶段(1.5个月)重构核心流程，第三阶段(0.5个月)性能优化。预计投入3名开发人员，总成本30万元。"'
+                },
+                education: {
+                    systemRole: '你是一位专业的教育顾问，专门为教师提供教学方案建议。',
+                    context: '基于学生的学习需求和教学现状，提供教学建议，包括教学方法、课程安排、学习指导等。',
+                    example: '学生需求："理解量子物理波粒二象性"\n建议："建议采用三步教学法：1)通过双缝实验视频建立直观认知；2)用光电效应实验理解粒子性；3)通过计算题巩固理解。预计需要4课时，建议准备实验材料。"'
+                }
+            };
+
+            if (!scenario || !scenarioPrompts[scenario]) {
+                throw new Error(`无效的场景类型: ${scenario}`);
+            }
+            const prompt = scenarioPrompts[scenario];
+            
+            const comprehensivePrompt = [
+                {
+                    role: 'system',
+                    content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成建议的指导原则：\n1. 基于当前对话内容，提供具体可行的建议\n2. 考虑企业能力和资源限制\n3. 提供多个选项供企业选择\n4. 包含具体的实施步骤和预期效果\n5. 避免过于理论化的建议，注重实用性`
+                },
+                {
+                    role: 'user',
+                    content: `当前对话内容："${content}"\n\n请为企业提供专业的建议，包括：\n\n【核心建议】\n基于当前情况的主要建议\n\n【具体方案】\n提供2-3个具体的实施方案\n\n【实施要点】\n关键的实施步骤和注意事项`
+                }
+            ];
+            
+            const result = await callModelScopeAPI(comprehensivePrompt, 0.3);
+            return {
+                steps: [{ name: '核心建议', content: result }],
+                suggestionMessage: result
+            };
+        }
+
+        // 新增：生成企业端追问
+        async function generateEnterpriseFollowUp(content, scenario) {
+            const scenarioPrompts = {
+                retail: {
+                    systemRole: '你是一位专业的零售销售专家，专门帮助企业了解客户需求的关键信息。',
+                    context: '基于当前对话，识别需要进一步了解的关键信息，生成有针对性的追问。',
+                    example: '客户说："需要商务西装"\n追问："请问您的具体使用场合是什么？预算范围大概是多少？您的身高体重是多少？对颜色和款式有什么偏好吗？"'
+                },
+                enterprise: {
+                    systemRole: '你是一位专业的企业需求分析师，专门帮助技术团队深入了解业务需求。',
+                    context: '基于当前对话，识别技术实现需要的关键信息，生成有针对性的追问。',
+                    example: '业务方说："需要提升用户体验"\n追问："具体希望提升哪些方面的体验？目标用户群体是谁？当前的痛点是什么？有具体的时间要求吗？预算范围是多少？"'
+                },
+                education: {
+                    systemRole: '你是一位专业的教育需求分析师，专门帮助教师了解学生的学习情况。',
+                    context: '基于当前对话，识别教学需要的关键信息，生成有针对性的追问。',
+                    example: '学生说："不懂这个概念"\n追问："您之前学过相关的基础知识吗？您更倾向于哪种学习方式？您希望达到什么样的理解程度？有什么具体的学习目标吗？"'
+                }
+            };
+
+            if (!scenario || !scenarioPrompts[scenario]) {
+                throw new Error(`无效的场景类型: ${scenario}`);
+            }
+            const prompt = scenarioPrompts[scenario];
+            
+            const comprehensivePrompt = [
+                {
+                    role: 'system',
+                    content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成追问的指导原则：\n1. 基于当前对话内容，识别信息缺口\n2. 生成3-5个有针对性的追问\n3. 追问要具体、明确，避免模糊表达\n4. 按照重要性排序\n5. 使用友好的语气，避免过于直接`
+                },
+                {
+                    role: 'user',
+                    content: `当前对话内容："${content}"\n\n请生成有针对性的追问，帮助更好地了解需求：\n\n【关键信息缺口】\n识别当前对话中缺失的关键信息\n\n【追问建议】\n提供3-5个具体的追问问题\n\n【追问策略】\n建议的追问顺序和方式`
+                }
+            ];
+            
+            const result = await callModelScopeAPI(comprehensivePrompt, 0.3);
+            return {
+                steps: [{ name: '追问建议', content: result }],
+                followUpMessage: result
+            };
+        }
+
         // 消息管理
         function addMessage(panel, messageData) {
             APP_STATE.messages[panel].push(messageData);
@@ -1072,7 +1243,10 @@
                 if (messages.length === 0) {
                     container.innerHTML = `
                         <div class="message processing">
-                            <div>AI 处理中心已就绪，等待输入...</div>
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-brain text-purple-600"></i>
+                                <span>AI 处理中心已就绪，等待输入...</span>
+                            </div>
                             <div class="message-meta">系统状态</div>
                         </div>
                     `;
@@ -1087,24 +1261,59 @@
                 
                 if (message.type === 'processing') {
                     messageEl.className = 'message processing';
-                    let stepsHtml = '';
-                    if (message.steps && message.steps.length > 0) {
-                        stepsHtml = '<div class="processing-steps">';
-                        message.steps.forEach(step => {
-                            stepsHtml += `
-                                <div class="processing-step">
-                                    <div class="processing-step-title">${step.name}</div>
-                                    <div class="processing-step-content">${step.content}</div>
-                                </div>
-                            `;
-                        });
-                        stepsHtml += '</div>';
+                    
+                    // 简化的处理状态显示
+                    let processingStatus = '正在处理...';
+                    let processingIcon = '<i class="fas fa-brain text-blue-600"></i>';
+                    
+                    if (message.title.includes('问题端')) {
+                        processingStatus = '正在分析客户需求...';
+                        processingIcon = '<i class="fas fa-layer-group text-blue-600"></i>';
+                    } else if (message.title.includes('方案端')) {
+                        processingStatus = '正在优化企业回复...';
+                        processingIcon = '<i class="fas fa-bolt text-green-600"></i>';
+                    } else if (message.title.includes('建议')) {
+                        processingStatus = '正在生成专业建议...';
+                        processingIcon = '<i class="fas fa-lightbulb text-purple-600"></i>';
+                    } else if (message.title.includes('追问')) {
+                        processingStatus = '正在生成追问问题...';
+                        processingIcon = '<i class="fas fa-filter text-orange-600"></i>';
+                    } else if (message.title.includes('最终')) {
+                        processingStatus = '正在处理最终回复...';
+                        processingIcon = '<i class="fas fa-arrow-right text-indigo-600"></i>';
                     }
                     
                     messageEl.innerHTML = `
-                        <div><strong>${message.title}</strong></div>
-                        ${stepsHtml}
-                        ${message.output ? `<div style="margin-top: 0.5rem; font-weight: 500;">输出：${message.output}</div>` : ''}
+                        <div class="flex items-start space-x-2">
+                            ${processingIcon}
+                            <div class="flex-1">
+                                <div class="font-medium text-secondary-800 mb-1">${processingStatus}</div>
+                                <div class="mt-2">
+                                    <div class="flex items-center space-x-2 text-sm text-secondary-600">
+                                        <div class="flex space-x-1">
+                                            <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                                            <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                            <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                                        </div>
+                                        <span>处理完成</span>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-secondary-600 mt-2">${formatTime(message.timestamp)}</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (message.type === 'suggestion') {
+                    messageEl.className = 'message suggestion';
+                    messageEl.innerHTML = `
+                        <div><strong>AI生成的建议</strong></div>
+                        <div>${message.text}</div>
+                        <div class="message-meta">${formatTime(message.timestamp)}</div>
+                    `;
+                } else if (message.type === 'followup') {
+                    messageEl.className = 'message followup';
+                    messageEl.innerHTML = `
+                        <div><strong>AI生成的追问</strong></div>
+                        <div>${message.text}</div>
                         <div class="message-meta">${formatTime(message.timestamp)}</div>
                     `;
                 } else {
@@ -1118,6 +1327,44 @@
                 container.appendChild(messageEl);
             });
             
+            // 添加处理状态显示
+            if (panel === 'solution') {
+                // 显示迭代处理状态
+                if (APP_STATE.iterationProcessing) {
+                    const processingEl = document.createElement('div');
+                    processingEl.className = 'message suggestion';
+                    processingEl.innerHTML = `
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-lightbulb text-purple-600"></i>
+                            <div class="flex space-x-1">
+                                <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                                <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                            </div>
+                            <span class="text-sm text-purple-700">AI正在生成...</span>
+                        </div>
+                    `;
+                    container.appendChild(processingEl);
+                }
+                // 显示常规处理状态（只在没有迭代处理时显示）
+                else if (APP_STATE.llmProcessing) {
+                    const processingEl = document.createElement('div');
+                    processingEl.className = 'message processing';
+                    processingEl.innerHTML = `
+                        <div class="flex items-center space-x-2">
+                            <i class="fas fa-brain text-blue-600"></i>
+                            <div class="flex space-x-1">
+                                <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                            </div>
+                            <span class="text-sm text-blue-700">正在处理...</span>
+                        </div>
+                    `;
+                    container.appendChild(processingEl);
+                }
+            }
+            
             scrollToBottom(container);
         }
 
@@ -1127,6 +1374,9 @@
                 llm: [],
                 solution: []
             };
+            APP_STATE.iterationMode = false;
+            APP_STATE.iterationProcessing = false;
+            APP_STATE.pendingResponse = null;
             
             renderMessages('problem');
             renderMessages('llm');
@@ -1256,12 +1506,214 @@
             }
         }
 
+        // 新增：生成企业端建议
+        async function generateSuggestion() {
+            if (APP_STATE.iterationProcessing) return;
+
+            APP_STATE.iterationProcessing = true;
+            updateProcessingUI();
+
+            try {
+                // 获取最新的对话内容
+                const recentMessages = [
+                    ...APP_STATE.messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
+                    ...APP_STATE.messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
+                ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                const currentContent = recentMessages.map(msg => msg.text).join('\n');
+
+                // 生成建议
+                const llmResult = await generateEnterpriseSuggestion(currentContent, APP_STATE.currentScenario);
+
+                // 添加LLM处理过程到中介面板
+                const llmMessage = {
+                    type: 'processing',
+                    title: '生成企业端建议',
+                    steps: llmResult.steps,
+                    output: llmResult.suggestionMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', llmMessage);
+
+                // 将建议添加到方案端（作为迭代内容）
+                const suggestionMessage = {
+                    type: 'suggestion',
+                    text: llmResult.suggestionMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('solution', suggestionMessage);
+
+                // 进入迭代模式
+                APP_STATE.iterationMode = true;
+                APP_STATE.pendingResponse = llmResult.suggestionMessage;
+                updateIterationModeUI();
+
+            } catch (error) {
+                console.error('生成建议错误:', error);
+                const errorMessage = {
+                    type: 'processing',
+                    title: '生成建议出错',
+                    steps: [{
+                        name: '错误信息',
+                        content: '抱歉，生成建议时出现了错误，请稍后重试。'
+                    }],
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', errorMessage);
+            } finally {
+                APP_STATE.iterationProcessing = false;
+                updateProcessingUI();
+            }
+        }
+
+        // 新增：生成企业端追问
+        async function generateFollowUp() {
+            if (APP_STATE.iterationProcessing) return;
+
+            APP_STATE.iterationProcessing = true;
+            updateProcessingUI();
+
+            try {
+                // 获取最新的对话内容
+                const recentMessages = [
+                    ...APP_STATE.messages.problem.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2),
+                    ...APP_STATE.messages.solution.filter(m => m.type === 'user' || m.type === 'ai_response').slice(-2)
+                ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                const currentContent = recentMessages.map(msg => msg.text).join('\n');
+
+                // 生成追问
+                const llmResult = await generateEnterpriseFollowUp(currentContent, APP_STATE.currentScenario);
+
+                // 添加LLM处理过程到中介面板
+                const llmMessage = {
+                    type: 'processing',
+                    title: '生成企业端追问',
+                    steps: llmResult.steps,
+                    output: llmResult.followUpMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', llmMessage);
+
+                // 将追问添加到方案端（作为迭代内容）
+                const followUpMessage = {
+                    type: 'followup',
+                    text: llmResult.followUpMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('solution', followUpMessage);
+
+                // 进入迭代模式
+                APP_STATE.iterationMode = true;
+                APP_STATE.pendingResponse = llmResult.followUpMessage;
+                updateIterationModeUI();
+
+            } catch (error) {
+                console.error('生成追问错误:', error);
+                const errorMessage = {
+                    type: 'processing',
+                    title: '生成追问出错',
+                    steps: [{
+                        name: '错误信息',
+                        content: '抱歉，生成追问时出现了错误，请稍后重试。'
+                    }],
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', errorMessage);
+            } finally {
+                APP_STATE.iterationProcessing = false;
+                updateProcessingUI();
+            }
+        }
+
+        // 新增：确认发送最终响应
+        async function confirmSendResponse(finalResponse) {
+            if (APP_STATE.llmProcessing) return;
+
+            APP_STATE.llmProcessing = true;
+            updateProcessingUI();
+
+            try {
+                // 处理最终响应
+                const llmResult = await processSolutionResponse(finalResponse, APP_STATE.currentScenario);
+
+                // 添加LLM处理过程到中介面板
+                const llmMessage = {
+                    type: 'processing',
+                    title: '处理最终响应',
+                    steps: llmResult.steps,
+                    output: llmResult.optimizedMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', llmMessage);
+
+                // 添加优化后的响应到问题端
+                const optimizedMessage = {
+                    type: 'ai_response',
+                    text: llmResult.optimizedMessage,
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('problem', optimizedMessage);
+
+                // 退出迭代模式
+                APP_STATE.iterationMode = false;
+                APP_STATE.pendingResponse = null;
+                updateIterationModeUI();
+
+            } catch (error) {
+                console.error('确认发送错误:', error);
+                const errorMessage = {
+                    type: 'processing',
+                    title: '处理最终响应出错',
+                    steps: [{
+                        name: '错误信息',
+                        content: '抱歉，处理最终响应时出现了错误，请稍后重试。'
+                    }],
+                    timestamp: new Date().toISOString()
+                };
+                addMessage('llm', errorMessage);
+            } finally {
+                APP_STATE.llmProcessing = false;
+                updateProcessingUI();
+            }
+        }
+
+        // 新增：取消迭代模式
+        function cancelIteration() {
+            APP_STATE.iterationMode = false;
+            APP_STATE.iterationProcessing = false;
+            APP_STATE.pendingResponse = null;
+            updateIterationModeUI();
+        }
+
         function updateProcessingUI() {
             const problemSendBtn = document.getElementById('problemSendBtn');
             const solutionSendBtn = document.getElementById('solutionSendBtn');
+            const generateSuggestionBtn = document.getElementById('generateSuggestionBtn');
+            const generateFollowUpBtn = document.getElementById('generateFollowUpBtn');
+            const confirmSendBtn = document.getElementById('confirmSendBtn');
+            const cancelIterationBtn = document.getElementById('cancelIterationBtn');
             
+            // 问题端和方案端的发送按钮只受llmProcessing影响
             problemSendBtn.disabled = APP_STATE.llmProcessing;
             solutionSendBtn.disabled = APP_STATE.llmProcessing;
+            
+            // AI辅助按钮受iterationProcessing影响
+            generateSuggestionBtn.disabled = APP_STATE.iterationProcessing || !APP_STATE.messages.solution || APP_STATE.messages.solution.length === 0;
+            generateFollowUpBtn.disabled = APP_STATE.iterationProcessing || !APP_STATE.messages.solution || APP_STATE.messages.solution.length === 0;
+            
+            // 迭代模式按钮受llmProcessing影响
+            confirmSendBtn.disabled = APP_STATE.llmProcessing;
+            cancelIterationBtn.disabled = APP_STATE.llmProcessing;
+            
+            // 更新AI辅助按钮的显示状态
+            if (APP_STATE.iterationProcessing) {
+                generateSuggestionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
+                generateFollowUpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
+            } else {
+                generateSuggestionBtn.innerHTML = '<i class="fas fa-lightbulb"></i> 生成相应建议';
+                generateFollowUpBtn.innerHTML = '<i class="fas fa-comment-dots"></i> 生成相应追问';
+            }
             
             if (APP_STATE.llmProcessing) {
                 problemSendBtn.innerHTML = '<i class="spinner"></i>';
@@ -1269,6 +1721,32 @@
             } else {
                 problemSendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
                 solutionSendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            }
+            
+            // 重新渲染方案端消息以显示处理状态
+            renderMessages('solution');
+        }
+
+        // 新增：更新迭代模式UI
+        function updateIterationModeUI() {
+            const iterationModeTip = document.getElementById('iterationModeTip');
+            const iterationModeControls = document.getElementById('iterationModeControls');
+            const regularInputContainer = document.getElementById('regularInputContainer');
+            const finalResponseInput = document.getElementById('finalResponseInput');
+            
+            if (APP_STATE.iterationMode) {
+                iterationModeTip.style.display = 'block';
+                iterationModeControls.style.display = 'block';
+                regularInputContainer.style.display = 'none';
+                
+                if (APP_STATE.pendingResponse) {
+                    finalResponseInput.value = APP_STATE.pendingResponse;
+                }
+            } else {
+                iterationModeTip.style.display = 'none';
+                iterationModeControls.style.display = 'none';
+                regularInputContainer.style.display = 'block';
+                finalResponseInput.value = '';
             }
         }
 
@@ -1358,6 +1836,26 @@
                 const input = document.getElementById('solutionInput');
                 sendSolutionMessage(input.value);
                 input.value = '';
+            });
+
+            // 新增：AI辅助按钮
+            document.getElementById('generateSuggestionBtn').addEventListener('click', () => {
+                generateSuggestion();
+            });
+
+            document.getElementById('generateFollowUpBtn').addEventListener('click', () => {
+                generateFollowUp();
+            });
+
+            // 新增：迭代模式按钮
+            document.getElementById('confirmSendBtn').addEventListener('click', () => {
+                const finalResponseInput = document.getElementById('finalResponseInput');
+                confirmSendResponse(finalResponseInput.value);
+            });
+
+            document.getElementById('cancelIterationBtn').addEventListener('click', () => {
+                cancelIteration();
+                updateIterationModeUI();
             });
 
             // 回车发送
@@ -1456,6 +1954,10 @@
             renderMessages('problem');
             renderMessages('llm');
             renderMessages('solution');
+            
+            // 初始化UI状态
+            updateProcessingUI();
+            updateIterationModeUI();
         }
 
         // 启动应用

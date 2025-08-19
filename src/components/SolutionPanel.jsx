@@ -1,9 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Users, Bot, FileText } from 'lucide-react'
+import { Send, Users, Bot, FileText, Lightbulb, MessageSquare, CheckCircle, XCircle } from 'lucide-react'
 import AnimatedTransition from './AnimatedTransition'
 
-const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
+const SolutionPanel = ({ 
+  scenario, 
+  messages, 
+  onSendMessage, 
+  isProcessing,
+  iterationProcessing, // 新增：迭代处理状态
+  iterationMode,
+  pendingResponse,
+  onGenerateSuggestion,
+  onGenerateFollowUp,
+  onConfirmSend,
+  onCancelIteration
+}) => {
   const [input, setInput] = useState('')
+  const [finalResponse, setFinalResponse] = useState('')
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -13,6 +26,13 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // 当进入迭代模式时，将待发送的响应填入输入框
+  useEffect(() => {
+    if (iterationMode && pendingResponse) {
+      setFinalResponse(pendingResponse)
+    }
+  }, [iterationMode, pendingResponse])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -24,6 +44,12 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
     })
 
     setInput('')
+  }
+
+  const handleConfirmSend = () => {
+    if (!finalResponse.trim()) return
+    onConfirmSend(finalResponse.trim())
+    setFinalResponse('')
   }
 
   const insertSampleResponse = () => {
@@ -57,6 +83,21 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
         </div>
       </div>
 
+      {/* 迭代模式提示 */}
+      {iterationMode && (
+        <AnimatedTransition type="slide-down" show={true}>
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800">
+            <div className="flex items-center space-x-2 text-blue-800 dark:text-blue-200">
+              <Lightbulb className="w-4 h-4" />
+              <span className="text-sm font-medium">迭代模式 - 请确认最终回复内容</span>
+            </div>
+            <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+              您可以继续编辑内容，确认无误后点击"确认发送"将回复发送给客户
+            </p>
+          </div>
+        </AnimatedTransition>
+      )}
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto space-y-3 mb-4 p-4">
         {(!messages || messages.length === 0) && (
@@ -88,7 +129,10 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
                       <div className="text-xs font-medium text-blue-700 mb-1">
                         来自LLM的翻译需求
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-blue-600 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
@@ -99,7 +143,10 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
               
               {message.type === 'user' && (
                 <div className="message-bubble bg-green-100 text-green-900 ml-auto shadow-sm hover:shadow-md transition-all duration-200">
-                  <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                  {/* [MODIFIED] 单条消息滚动容器 */}
+                  <div className="message-content">
+                    <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                  </div>
                   <div className="text-xs text-green-700 mt-1 opacity-75">
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
@@ -114,8 +161,53 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
                       <div className="text-xs font-medium text-gray-700 mb-1">
                         LLM优化后的响应
                       </div>
-                      <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
                       <div className="text-xs text-gray-500 mt-1">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 新增：建议消息 */}
+              {message.type === 'suggestion' && (
+                <div className="message-bubble bg-purple-50 text-purple-900 border border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
+                  <div className="flex items-start space-x-2">
+                    <Lightbulb className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <div className="text-xs font-medium text-purple-700 mb-1">
+                        AI生成的建议
+                      </div>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
+                      <div className="text-xs text-purple-600 mt-1 opacity-75">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 新增：追问消息 */}
+              {message.type === 'followup' && (
+                <div className="message-bubble bg-orange-50 text-orange-900 border border-orange-200 shadow-sm hover:shadow-md transition-all duration-200">
+                  <div className="flex items-start space-x-2">
+                    <MessageSquare className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <div className="text-xs font-medium text-orange-700 mb-1">
+                        AI生成的追问
+                      </div>
+                      {/* [MODIFIED] 单条消息滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.text}</p>
+                      </div>
+                      <div className="text-xs text-orange-600 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
                     </div>
@@ -126,7 +218,25 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
           </AnimatedTransition>
         ))}
         
-        {isProcessing && (
+        {/* 显示迭代处理状态 */}
+        {iterationProcessing && (
+          <AnimatedTransition type="fade" show={true}>
+            <div className="message-bubble message-ai border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20">
+              <div className="flex items-center space-x-2">
+                <Lightbulb className="w-4 h-4 text-purple-700 dark:text-purple-400" />
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
+                <span className="text-sm text-purple-700 dark:text-purple-300">AI正在生成...</span>
+              </div>
+            </div>
+          </AnimatedTransition>
+        )}
+        
+        {/* 显示常规处理状态 */}
+        {isProcessing && !iterationProcessing && (
           <AnimatedTransition type="fade" show={true}>
             <div className="message-bubble message-ai border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
               <div className="flex items-center space-x-2">
@@ -144,44 +254,134 @@ const SolutionPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="flex space-x-3">
-            <div className="flex-1">
+      {/* 迭代模式下的操作按钮 */}
+      {iterationMode && (
+        <AnimatedTransition type="slide-up" show={true}>
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-900/20">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2 text-yellow-800 dark:text-yellow-200">
+                <Lightbulb className="w-4 h-4" />
+                <span className="text-sm font-medium">编辑最终回复内容</span>
+              </div>
+              
               <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={`作为${scenario.solutionRole}，请提供您的专业建议...`}
+                value={finalResponse}
+                onChange={(e) => setFinalResponse(e.target.value)}
+                placeholder="编辑最终回复内容..."
                 className="input-field resize-none transition-all duration-200 focus:shadow-md"
-                rows={3}
+                rows={4}
                 disabled={isProcessing}
               />
+              
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleConfirmSend}
+                  disabled={!finalResponse.trim() || isProcessing}
+                  className="flex-1 btn-primary p-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200 hover:scale-105 flex items-center justify-center space-x-2"
+                  title="确认发送给客户"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>确认发送</span>
+                </button>
+                
+                <button
+                  onClick={onCancelIteration}
+                  disabled={isProcessing}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  title="取消迭代"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>取消</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </AnimatedTransition>
+      )}
+
+      {/* 常规输入区域 */}
+      {!iterationMode && (
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="flex space-x-3">
+              <div className="flex-1">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={`作为${scenario.solutionRole}，请提供您的专业建议...`}
+                  className="input-field resize-none transition-all duration-200 focus:shadow-md"
+                  rows={3}
+                  disabled={isProcessing || iterationProcessing}
+                />
+              </div>
+              
+              <div className="flex flex-col justify-end">
+                <button
+                  type="submit"
+                  disabled={!input.trim() || isProcessing || iterationProcessing}
+                  className="btn-primary p-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200 hover:scale-105"
+                  title="发送解决方案"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             
-            <div className="flex flex-col justify-end">
+            {/* 新增：AI辅助按钮 */}
+            <div className="flex space-x-2">
               <button
-                type="submit"
-                disabled={!input.trim() || isProcessing}
-                className="btn-primary p-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200 hover:scale-105"
-                title="发送解决方案"
+                type="button"
+                onClick={onGenerateSuggestion}
+                disabled={iterationProcessing || !messages || messages.length === 0}
+                className="flex-1 px-3 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                title="AI生成建议"
               >
-                <Send className="w-5 h-5" />
+                {iterationProcessing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>生成中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Lightbulb className="w-4 h-4" />
+                    <span>生成相应建议</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                type="button"
+                onClick={onGenerateFollowUp}
+                disabled={iterationProcessing || !messages || messages.length === 0}
+                className="flex-1 px-3 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                title="AI生成追问"
+              >
+                {iterationProcessing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>生成中...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-4 h-4" />
+                    <span>生成相应追问</span>
+                  </>
+                )}
               </button>
             </div>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              💡 基于LLM中介的分析结果提供解决方案
-            </div>
             
-            <div className="flex items-center space-x-2 text-xs text-gray-400">
-              <span>Ctrl+Enter 快速发送</span>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                💡 基于LLM中介的分析结果提供解决方案
+              </div>
+              
+              <div className="flex items-center space-x-2 text-xs text-gray-400">
+                <span>Ctrl+Enter 快速发送</span>
+              </div>
             </div>
-          </div>
-        </form>
-      </div>
+          </form>
+        </div>
+      )}
     </>
   )
 }

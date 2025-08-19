@@ -1,17 +1,55 @@
-// 魔搭LLM处理服务
-// 使用魔搭平台的Qwen2.5-7B-Instruct模型
+// [MODIFIED] Deepbricks LLM处理服务
+// Impact: 切换到 Deepbricks API，模型 GPT-4.1-mini
+// Backward Compatibility: 保留原有函数/常量命名与请求结构，调用方无需改动
 
-// 魔搭API配置
+// Deepbricks API配置
 const MODELSCOPE_CONFIG = {
-  baseURL: 'https://api-inference.modelscope.cn/v1',
-  model: 'deepseek-ai/DeepSeek-V3',
-  apiKey: 'ms-150d583e-ed00-46d3-ab35-570f03555599'
+  // [MODIFIED]
+  baseURL: 'https://api.deepbricks.ai/v1/',
+  model: 'GPT-4.1-mini',
+  apiKey: 'sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg'
+}
+
+// 日志辅助函数（避免输出过长内容和敏感信息）
+const truncateForLog = (text, maxLength = 2000) => {
+  if (typeof text !== 'string') return text
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + '…(truncated)'
+}
+
+const formatMessagesForLog = (messages) => {
+  try {
+    return messages.map(m => ({
+      role: m.role,
+      content: truncateForLog(m.content)
+    }))
+  } catch (_) {
+    return '[unserializable messages]'
+  }
 }
 
 // 调用魔搭API的通用函数
 const callModelScopeAPI = async (messages, temperature = 0.7) => {
   try {
-    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}/chat/completions`, {
+    const isDev = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV
+    console.groupCollapsed('[LLM] Request')
+    console.log('model:', MODELSCOPE_CONFIG.model) // [MODIFIED]
+    console.log('temperature:', temperature)
+    console.log('messages:', formatMessagesForLog(messages))
+    console.time('[LLM] latency')
+    if (isDev) {
+      console.group('[LLM] Full Prompt')
+      try {
+        const mergedPrompt = messages.map((m, i) => `#${i + 1} [${m.role}]\n${m.content}`).join('\n\n---\n\n')
+        console.log(mergedPrompt)
+      } catch (_) {}
+      try {
+        console.log('messages JSON:', JSON.stringify(messages, null, 2))
+      } catch (_) {}
+      console.groupEnd()
+    }
+    // [MODIFIED] Deepbricks 兼容 OpenAI Chat Completions 路由
+    const response = await fetch(`${MODELSCOPE_CONFIG.baseURL}chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -27,13 +65,30 @@ const callModelScopeAPI = async (messages, temperature = 0.7) => {
     })
 
     if (!response.ok) {
+      console.timeEnd('[LLM] latency')
+      console.log('status:', response.status, response.statusText)
       throw new Error(`API调用失败: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
-    return data.choices[0].message.content
+    const content = data?.choices?.[0]?.message?.content
+    console.timeEnd('[LLM] latency')
+    if (data?.usage) console.log('usage:', data.usage)
+    console.log('responseMessage:', truncateForLog(content))
+    if (isDev) {
+      console.group('[LLM] Raw Response')
+      try { console.log('raw JSON:', JSON.stringify(data, null, 2)) } catch (_) {}
+      try { console.log('raw message:', JSON.stringify(data?.choices?.[0]?.message, null, 2)) } catch (_) {}
+      try { console.log('raw content:', data?.choices?.[0]?.message?.content) } catch (_) {}
+      console.groupEnd()
+    }
+    console.groupEnd()
+    return content
   } catch (error) {
+    try { console.groupEnd() } catch (_) {}
+    console.groupCollapsed('[LLM] Error')
     console.error('魔搭API调用错误:', error)
+    console.groupEnd()
     throw error
   }
 }
@@ -51,7 +106,20 @@ const sanitizeOutput = (text) => {
     '若有不符请指正',
     '你好！很高兴能帮助你。',
     '请问你现在是在寻找什么类型的商品',
-    '衣服、鞋子还是其他什么小物件'
+    '衣服、鞋子还是其他什么小物件',
+    '感谢您的反馈',
+    '我们非常重视',
+    '如果您有任何问题',
+    '如需.*帮助',
+    '请随时联系',
+    '客服团队',
+    '支持团队',
+    '为您提供满意的解决方案',
+    '我们会尽力.*解决',
+    '敬请谅解',
+    '忽略本次对话',
+    '继续浏览其他服务或信息',
+    '欢迎.*联系我们'
   ]
   let sanitized = text
   bannedPhrases.forEach((p) => {
@@ -61,25 +129,97 @@ const sanitizeOutput = (text) => {
   return sanitized.trim()
 }
 
-// 处理问题端输入
-const processProblemInput = async (content, image, scenario) => {
+// [MODIFIED] 健壮的解析与剥离工具，避免将AI建议再次转译
+// Impact: 确保发往方案端(`solution`)的 `llm_request` 仅包含「需求转译」文本
+// Backward Compatibility: 不改变对外API，仅增强解析鲁棒性
+const findFirstIndex = (text, keywords) => {
+  for (const keyword of keywords) {
+    const idx = text.indexOf(keyword)
+    if (idx !== -1) return { idx, keyword }
+  }
+  return { idx: -1, keyword: '' }
+}
+
+const parseSectionsRobust = (raw) => {
+  const text = typeof raw === 'string' ? raw : ''
+  const sections = {
+    translation: '',
+    solutionsText: '',
+    confirmationsText: ''
+  }
+
+  // 多标题兼容
+  const translationKeys = ['【需求转译】', '【需求翻译】', '【转译结果】', '【需求澄清】', '需求转译', '需求翻译', '转译结果', '需求澄清', '客户需求转译', '用户需求转译']
+  const solutionKeys = ['【解决方案建议】', '【建议方案】', '【行动建议】', '解决方案建议', '建议的解决方案', '方案建议', '行动建议']
+  const confirmKeys = ['【待确认信息】', '【需确认信息】', '【待确认】', '待确认信息', '需确认信息']
+
+  const t = findFirstIndex(text, translationKeys)
+  const s = findFirstIndex(text, solutionKeys)
+  const c = findFirstIndex(text, confirmKeys)
+
+  const endOf = (startIdx) => {
+    if (startIdx === -1) return text.length
+    const candidates = [s.idx, c.idx, text.length].filter((v) => v !== -1 && v > startIdx)
+    return Math.min(...candidates)
+  }
+
+  // 取需求转译
+  if (t.idx !== -1) {
+    const start = t.idx + t.keyword.length
+    const end = endOf(t.idx)
+    sections.translation = text.slice(start, end).trim()
+  } else if (s.idx !== -1) {
+    // 未找到转译标题，但找到方案标题：取方案之前内容作为转译
+    sections.translation = text.slice(0, s.idx).trim()
+  }
+
+  // 取方案建议（中介面板展示用）
+  if (s.idx !== -1) {
+    const start = s.idx + s.keyword.length
+    const end = c.idx !== -1 ? c.idx : text.length
+    sections.solutionsText = text.slice(start, end).trim()
+  }
+
+  // 取待确认信息（中介面板展示用）
+  if (c.idx !== -1) {
+    const start = c.idx + c.keyword.length
+    sections.confirmationsText = text.slice(start).trim()
+  }
+
+  // 兜底：若仍未抽取到转译，尽量剥离明显“方案/建议”段落
+  if (!sections.translation) {
+    const firstSolutionIdx = s.idx !== -1 ? s.idx : text.search(/\n?\s*(方案|选项|建议)\s*[1-9]/)
+    if (firstSolutionIdx !== -1 && firstSolutionIdx > 0) {
+      sections.translation = text.slice(0, firstSolutionIdx).trim()
+    } else {
+      const truncated = text.slice(0, 500)
+      const split = truncated.split(/\n{2,}/)
+      sections.translation = (split[0] || truncated).trim()
+    }
+  }
+
+  return sections
+}
+
+// 处理问题端输入 - 增强版本，支持聊天历史和深度理解
+const processProblemInput = async (content, image, scenario, chatHistory = []) => {
   try {
-    // 根据场景定制提示词
+    // 根据场景定制提示词 - 增强版本
     const scenarioPrompts = {
       retail: {
-        systemRole: '你是一个专业的零售需求分析专家，专门处理顾客与门店之间的沟通。',
-        context: '场景边界：仅限零售顾客-门店沟通。禁止输出任何企业内部流程/跨部门协作/技术研发等企业场景内容。\n在零售场景中，顾客通常关注产品功能、价格、服务质量等。请将顾客的需求转化为门店能够理解和执行的专业描述，必须包含具体的产品类型、使用场景、预算范围、尺寸要求等关键信息。',
-        example: '例如："我需要一件适合商务场合的衣服" → "顾客需要商务正装西装，男性/女性，用于重要会议场合，预算500-1000元，需要专业搭配建议和合身尺码推荐"'
+        systemRole: '你是一个专业的AI沟通助手，专门在顾客与企业门店之间提供精准的需求转译和解决方案建议。你的核心职责是：1)准确理解顾客的真实需求和潜在意图 2)将其转化为企业能够理解和执行的专业描述 3)基于企业能力提供具体可行的解决方案选项。',
+        context: '场景边界：零售顾客-门店沟通。你需要同时理解双方可能存在的表达偏差：顾客可能表达不清晰或有隐含需求，企业可能用专业术语回复。\n\n核心任务：\n1. 深度理解：分析顾客的显性需求和隐性需求，识别可能的表达偏差\n2. 精准转译：将顾客需求转化为包含产品类型、使用场景、预算范围、规格要求等关键信息的专业描述\n3. 方案建议：基于转译结果，为企业提供2-3个具体可行的解决方案选项，包含产品推荐、服务建议、价格区间等',
+        example: '例如：顾客说"我需要一件适合商务场合的衣服" → 转译："顾客需要商务正装，用于重要会议，预算待确认，需要专业形象" → 方案建议："1)推荐经典商务西装套装，价格800-1500元，包含免费修改服务 2)推荐商务休闲装，价格500-800元，适合日常商务场合 3)提供个人形象顾问服务，根据具体需求定制搭配方案"'
       },
       enterprise: {
-        systemRole: '你是一个专业的企业沟通分析专家，专门处理跨部门协作需求。',
-        context: '场景边界：仅限企业内部跨部门沟通。禁止输出任何与商品销售、衣服/鞋子/价格/购买等零售相关的内容，如出现倾向须改写为企业语境表述。\n在企业场景中，不同部门有各自的专业术语和工作重点。请将市场部的需求转化为研发部能够理解的技术要求，必须包含具体的功能目标、技术需求、时间期限、资源投入等关键信息。',
-        example: '例如："我们需要提升用户体验" → "市场部要求开发移动端界面优化功能，目标提升用户留存率15%，需要UI/UX重设计和前端开发，预期3个月内完成"'
+        systemRole: '你是一个专业的AI沟通助手，专门在企业跨部门之间提供精准的需求转译和解决方案建议。你的核心职责是：1)准确理解业务部门的需求和技术部门的能力边界 2)消除部门间的沟通偏差 3)提供具体可行的技术解决方案选项。',
+        context: '场景边界：企业内部跨部门沟通。你需要理解不同部门的语言差异：业务部门关注效果和时间，技术部门关注可行性和资源。\n\n核心任务：\n1. 需求解析：将业务需求转化为技术可理解的功能要求，包含具体指标、时间期限、资源约束\n2. 方案设计：基于技术能力提供2-3个不同复杂度的解决方案选项\n3. 风险评估：识别实施过程中可能的技术风险和资源需求',
+        example: '例如：市场部说"我们需要提升用户体验" → 转译："需要开发用户体验优化功能，目标提升用户留存率，时间3个月内" → 方案建议："1)快速方案：优化现有界面和交互，预计提升10%留存率，需要2周，成本5万 2)中等方案：重新设计核心流程，预计提升25%留存率，需要6周，成本15万 3)深度方案：全面重构用户体验，预计提升40%留存率，需要3个月，成本40万"'
       },
       education: {
-        systemRole: '你是一个专业的教育沟通分析专家，专门处理师生互动需求。',
-        context: '场景边界：仅限师生互动的学习沟通。禁止输出企业/零售等非教学场景内容。\n在教育场景中，学生的问题往往需要转化为教师能够系统回答的教学要点。请将学生的疑问转化为清晰的学习需求，必须包含具体的知识点、理解困难、学习目标、所需教学方式等关键信息。',
-        example: '例如："我不懂这个概念" → "学生对量子物理波粒二象性概念理解困难，需要通过具体实验例子和图解说明，目标是掌握基本原理和应用场景"'
+        systemRole: '你是一个专业的AI教学助手，专门在学生与教师之间提供精准的学习需求转译和教学方案建议。你的核心职责是：1)深度理解学生的学习困难和知识盲点 2)将其转化为教师可操作的教学要点 3)提供多样化的教学解决方案选项。',
+        context: '场景边界：师生互动的学习沟通。你需要理解学习过程中的认知偏差：学生可能无法准确表达困难点，教师可能用过于专业的语言回复。\n\n核心任务：\n1. 学习诊断：分析学生的具体困难点、知识背景、学习风格\n2. 教学转译：将学习需求转化为包含知识点、难点分析、教学目标的专业描述\n3. 方案建议：提供2-3种不同教学方法的具体实施方案',
+        example: '例如：学生说"我不懂这个概念" → 转译："学生对量子物理波粒二象性概念理解困难，需要从基础概念开始，通过实验例子建立认知" → 方案建议："1)实验演示法：通过双缝实验等经典实验，直观展示波粒二象性，适合视觉学习者 2)类比教学法：用水波和弹珠的类比，帮助理解抽象概念，适合逻辑思维强的学生 3)渐进式教学：从光的基本性质开始，逐步引入量子概念，适合基础较弱的学生"'
       }
     }
 
@@ -88,35 +228,73 @@ const processProblemInput = async (content, image, scenario) => {
     }
     const prompt = scenarioPrompts[scenario]
     
+    // 构建聊天历史上下文
+    let chatContext = ''
+    if (chatHistory && chatHistory.length > 0) {
+      chatContext = '\n\n聊天历史上下文：\n' + 
+        chatHistory.slice(-6).map((msg, index) => {
+          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : 'AI处理'
+          return `${index + 1}. ${role}: ${msg.text}`
+        }).join('\n')
+    }
+    
     const comprehensivePrompt = [
       {
         role: 'system',
-        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n严格规则：
-1. 只基于用户提供的信息进行表达，禁止编造任何未出现的具体事实（价格/时间/数量/规格等）。
-2. 禁止使用模糊或拒绝类模板语，如“非常抱歉/无法理解/请提供更多信息/若有不符请指正”等。
-3. 输出需清晰、克制、专业，面向对方直接可读，避免冗长的自我解释。
-4. 若信息不足，采用“待确认信息”列表列出需要澄清的2-5项，而不是要求用户补充或致歉。
-5. 优先保持可执行性和用户体验。`
+        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n增强指令：
+1. 上下文理解：充分利用聊天历史，理解对话的完整背景和客户的真实需求
+2. 深度优化：不仅转化语言，更要优化内容结构，确保客户获得最大价值
+3. 行动导向：提供具体的下一步行动建议，帮助客户做出明智决策
+4. 体验提升：确保回复友好、专业、有温度，提升整体沟通体验
+5. 价值传递：清晰传达方案的价值和好处，帮助客户理解选择的意义
+6. 风险预防：识别可能的误解或疑虑，主动提供澄清和保障
+7. 风格限制：严格禁止输出任何客服话术或模板化表达（如“感谢您的反馈/我们非常重视/如需帮助请联系/联系我们的客服团队/为您提供满意的解决方案/敬请谅解/忽略本次对话/继续浏览”等），禁止道歉或致谢套话；只围绕当前场景内容进行事实性与可执行性表述，不输出联系渠道或平台政策信息。`
       },
       {
         role: 'user',
-        content: `用户输入："${content}"${image ? '\n（用户还上传了一张图片）' : ''}\n\n请用“自然沟通对话”的口吻，直接面向对方（方案端）说话，表达简洁、礼貌、具体、可执行；不要使用列表或结构化标题，不要出现“非常抱歉/请提供更多信息/若有不符请指正”等模板语；若确有需要澄清的点，请以自然语言在一句话内温和提出（不使用项目符号）。`
+        content: `当前用户输入："${content}"${image ? '\n（用户还上传了一张图片）' : ''}${chatContext}\n\n请按照以下结构输出：\n\n【需求转译】\n将用户需求转化为专业、具体的描述，包含所有关键信息\n\n【解决方案建议】\n基于转译结果，提供2-3个具体可行的解决方案选项：\n方案1：[具体方案描述，包含实施建议、预期效果等]\n方案2：[具体方案描述，包含实施建议、预期效果等]\n方案3：[具体方案描述，包含实施建议、预期效果等]\n\n【待确认信息】\n如有需要进一步确认的关键信息，请列出（如无则写"无"）`
       }
     ]
     const resultRaw = await callModelScopeAPI(comprehensivePrompt, 0.1)
     const result = sanitizeOutput(resultRaw)
 
-    // 简化的步骤显示
+    // [MODIFIED] 使用健壮解析，避免将AI建议再次转译
+    // Impact: 仅将「需求转译」转发给企业端；中介面板仍展示建议和待确认信息
+    // Backward Compatibility: 返回结构字段保持一致
+    const parsed = parseSectionsRobust(result)
+
+    // 构建详细步骤（给中介面板）
     const steps = [
       {
-        name: '语义翻译',
-        content: result
+        name: '需求分析与转译',
+        content: parsed.translation
       }
     ]
+    if (parsed.solutionsText) {
+      steps.push({
+        name: '解决方案建议',
+        content: parsed.solutionsText
+      })
+    }
+    if (parsed.confirmationsText && parsed.confirmationsText !== '无') {
+      steps.push({
+        name: '待确认信息',
+        content: parsed.confirmationsText
+      })
+    }
+
+    // 仅将「需求转译」发往方案端
+    const translatedMessage = parsed.translation
+
+    console.groupCollapsed('[LLM] Parsed -> problem_input')
+    console.log('structuredOutput:', parsed)
+    console.log('translatedMessage:', truncateForLog(translatedMessage))
+    console.groupEnd()
 
     return {
       steps,
-      translatedMessage: result
+      translatedMessage,
+      structuredOutput: parsed
     }
   } catch (error) {
     console.error('处理问题输入时出错:', error)
@@ -124,25 +302,24 @@ const processProblemInput = async (content, image, scenario) => {
   }
 }
 
-// 处理方案端响应
-const processSolutionResponse = async (content, scenario) => {
+// 处理方案端响应 - 增强版本，支持聊天历史和解决方案优化
+const processSolutionResponse = async (content, scenario, chatHistory = []) => {
   try {
-    // 根据场景定制提示词
     const scenarioPrompts = {
       retail: {
-        systemRole: '你是一个专业的零售方案优化专家，专门将门店的专业回复转化为顾客易懂的语言。',
-        context: '在零售场景中，门店回复通常包含专业术语和详细信息。请将其转化为顾客友好、易懂的表达方式，必须包含具体的产品信息、价格、购买建议和服务细节。',
-        example: '例如："该款商务套装采用高支棉面料，版型修身" → "这套西装使用优质棉料制作，剪裁合身显身材，售价1200元，包含免费修改服务，适合您的商务会议需求"'
+        systemRole: '你是一位专业的零售业客户服务AI助手，专门负责将企业的专业回复转化为客户友好的表达。',
+        context: '在零售场景中，企业通常会提供产品信息、价格方案、服务条款等专业内容。你的任务是将这些内容转化为客户容易理解和接受的语言，同时提供具体的行动建议，帮助客户做出购买决策。',
+        example: '企业回复："该产品采用进口材料，符合国际标准，批发价格为单价80元，起订量100件。"\n优化后："这款产品使用的是进口优质材料，品质有保障。如果您需要100件以上，我们可以给您80元/件的优惠价格。建议您可以先确认一下具体需要的数量，我们为您计算总价和配送方案。"'
       },
       enterprise: {
-        systemRole: '你是一个专业的企业方案优化专家，专门将技术回复转化为业务语言。',
-        context: '在企业场景中，研发部的回复通常包含技术细节。请将其转化为市场部能够理解的业务价值表达，必须包含具体的实施方案、时间安排、预期效果和资源需求。',
-        example: '例如："我们将优化API响应时间和数据库查询效率" → "我们将在2个月内完成系统优化，预计用户操作速度提升50%，需要3名开发人员，预算约30万元"'
+        systemRole: '你是一位专业的企业服务AI助手，专门负责将技术方案和商业提案转化为决策者易懂的表达。',
+        context: '在企业服务场景中，技术团队通常会提供复杂的解决方案、技术规格、实施计划等。你需要将这些内容转化为业务决策者能够理解的语言，突出商业价值和实施路径。',
+        example: '企业回复："我们建议采用微服务架构，使用Docker容器化部署，预计开发周期6个月，需要投入3名高级工程师。"\n优化后："我们为您设计了一套灵活可扩展的系统架构，可以支持您业务的快速增长。整个项目大约需要6个月完成，我们会安排3位资深工程师专门负责。建议我们先安排一次详细的需求沟通，为您制定具体的实施计划和时间节点。"'
       },
       education: {
-        systemRole: '你是一个专业的教育方案优化专家，专门将教师的专业回复转化为学生易懂的语言。',
-        context: '在教育场景中，教师的回复通常包含专业知识点。请将其转化为学生容易理解和记忆的表达方式，必须包含具体的概念解释、实例说明、学习方法和练习建议。',
-        example: '例如："量子力学中波粒二象性是指微观粒子既具有波动性又具有粒子性" → "波粒二象性简单说就是光既像波浪又像小球，比如光的干涉现象显示波动性，光电效应显示粒子性，你可以通过做双缝实验来理解这个概念"'
+        systemRole: '你是一位专业的教育服务AI助手，专门负责将教学方案和课程安排转化为学生和家长易懂的表达。',
+        context: '在教育场景中，教师和教务人员通常会提供课程安排、教学计划、学习要求等专业内容。你需要将这些转化为学生和家长容易理解的语言，突出学习价值和具体安排。',
+        example: '企业回复："该课程采用STEAM教学法，包含理论讲解和实践操作，每周2课时，共计24课时，需要准备实验材料。"\n优化后："这门课程会通过动手实践的方式让孩子学习，每周安排2节课，总共12周完成。孩子们会在课堂上进行有趣的实验和项目制作。建议您提前为孩子准备一些基础的实验材料，我们会提供详细的材料清单。"'
       }
     }
 
@@ -151,35 +328,89 @@ const processSolutionResponse = async (content, scenario) => {
     }
     const prompt = scenarioPrompts[scenario]
     
+    // 构建聊天历史上下文
+    let chatContext = ''
+    if (chatHistory && chatHistory.length > 0) {
+      chatContext = '\n\n聊天历史上下文：\n' + 
+        chatHistory.slice(-6).map((msg, index) => {
+          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          return `${index + 1}. ${role}: ${msg.text}`
+        }).join('\n')
+    }
+    
     const comprehensivePrompt = [
       {
         role: 'system',
-        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n严格规则：
-1. 只基于方案端提供的信息进行表述，禁止编造未出现的指标/价格/时间等具体事实。
-2. 禁止使用模糊或拒绝类模板语（如“非常抱歉/无法理解/请提供更多信息/若有不符请指正”等）。
-3. 输出面向最终用户，简洁、友好、具体，避免冗长解释。
-4. 若信息不足，使用“待确认信息”列表给出2-5条需要澄清的问题；若无则写“无”。
-5. 优先保证可执行性与用户体验。`
+        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n增强指令：
+1. 上下文理解：充分利用聊天历史，理解对话的完整背景和客户的真实需求
+2. 深度优化：不仅转化语言，还要优化内容结构，确保客户获得最大价值
+3. 行动导向：提供具体的下一步行动建议，帮助客户做出明智决策
+4. 体验提升：确保回复友好、专业、有温度，提升整体沟通体验
+5. 价值传递：清晰传达方案的价值和好处，帮助客户理解选择的意义
+6. 风险预防：识别可能的误解或疑虑，主动提供澄清和保障
+7. 风格限制：严格禁止输出任何客服话术或模板化表达（如“感谢您的反馈/我们非常重视/如需帮助请联系/联系我们的客服团队/为您提供满意的解决方案/敬请谅解/忽略本次对话/继续浏览”等），禁止道歉或致谢套话；只围绕当前场景内容进行事实性与可执行性表述，不输出联系渠道或平台政策信息。`
       },
       {
         role: 'user',
-        content: `方案端响应："${content}"\n\n请用“自然沟通对话”的口吻，直接面向用户说话，表达友好、具体、可执行；不要使用列表或结构化标题，不要出现“非常抱歉/请提供更多信息/若有不符请指正”等模板语；若存在待确认事项，请在一句话里温和地邀请用户确认关键点，并给出明确的下一步建议（仅基于已知信息）。`
+        content: `企业方案端回复："${content}"${chatContext}\n\n请按照以下结构输出：\n\n【优化回复】\n将企业回复转化为客户友好、易懂的表达，包含关键信息和价值点\n\n【行动建议】\n基于当前情况，为客户提供2-3个具体的下一步行动选项：\n选项1：[具体行动描述，包含预期结果]\n选项2：[具体行动描述，包含预期结果]\n选项3：[具体行动描述，包含预期结果]\n\n【补充说明】\n如有需要补充的重要信息或注意事项，请列出（如无则写"无"）`
       }
     ]
     const resultRaw = await callModelScopeAPI(comprehensivePrompt, 0.1)
     const result = sanitizeOutput(resultRaw)
 
-    // 简化的步骤显示
+    // 解析结构化输出
+    const optimizedReplyMatch = result.match(/【优化回复】\s*([\s\S]*?)(?=【行动建议】|$)/)
+    const actionSuggestionsMatch = result.match(/【行动建议】\s*([\s\S]*?)(?=【补充说明】|$)/)
+    const additionalInfoMatch = result.match(/【补充说明】\s*([\s\S]*?)$/)
+    
+    const optimizedReply = optimizedReplyMatch ? optimizedReplyMatch[1].trim() : result
+    const actionSuggestions = actionSuggestionsMatch ? actionSuggestionsMatch[1].trim() : ''
+    const additionalInfo = additionalInfoMatch ? additionalInfoMatch[1].trim() : ''
+
+    // 构建详细的步骤显示
     const steps = [
       {
-        name: '方案优化',
-        content: result
+        name: '语言优化',
+        content: optimizedReply
       }
     ]
+    
+    if (actionSuggestions && actionSuggestions !== '无') {
+      steps.push({
+        name: '行动建议',
+        content: actionSuggestions
+      })
+    }
+    
+    if (additionalInfo && additionalInfo !== '无') {
+      steps.push({
+        name: '补充说明',
+        content: additionalInfo
+      })
+    }
+
+    // 构建最终的优化消息
+    let optimizedMessage = optimizedReply
+    if (actionSuggestions && actionSuggestions !== '无') {
+      optimizedMessage += '\n\n' + actionSuggestions
+    }
+    if (additionalInfo && additionalInfo !== '无') {
+      optimizedMessage += '\n\n' + additionalInfo
+    }
+
+    console.groupCollapsed('[LLM] Parsed -> solution_response')
+    console.log('structuredOutput:', { optimizedReply, actionSuggestions, additionalInfo })
+    console.log('optimizedMessage:', truncateForLog(optimizedMessage))
+    console.groupEnd()
 
     return {
        steps,
-       optimizedMessage: result
+       optimizedMessage,
+       structuredOutput: {
+         optimizedReply,
+         actionSuggestions,
+         additionalInfo
+       }
      }
   } catch (error) {
     console.error('处理方案响应时出错:', error)
@@ -187,7 +418,222 @@ const processSolutionResponse = async (content, scenario) => {
   }
 }
 
+// 新增：生成企业端建议
+const generateEnterpriseSuggestion = async (content, scenario, chatHistory = []) => {
+  try {
+    const scenarioPrompts = {
+      retail: {
+        systemRole: '你是一位专业的零售顾问，专门为企业门店提供销售建议和解决方案。',
+        context: '基于客户的需求和企业的情况，提供专业的销售建议，包括产品推荐、价格策略、服务方案等。',
+        example: '客户需求："需要商务西装，预算800-1500元"\n建议："建议推荐三款产品：1)经典款A123，售价1280元，意大利面料，免费修改；2)现代款B456，售价1150元，舒适透气；3)高端款C789，售价1350元，时尚剪裁。重点推荐A123，性价比最高，适合商务场合。"'
+      },
+      enterprise: {
+        systemRole: '你是一位专业的企业技术顾问，专门为技术团队提供解决方案建议。',
+        context: '基于业务需求和技术现状，提供技术方案建议，包括架构设计、技术选型、实施计划等。',
+        example: '业务需求："提升用户体验，3个月内完成"\n建议："建议采用渐进式优化方案：第一阶段(1个月)优化现有界面，第二阶段(1.5个月)重构核心流程，第三阶段(0.5个月)性能优化。预计投入3名开发人员，总成本30万元。"'
+      },
+      education: {
+        systemRole: '你是一位专业的教育顾问，专门为教师提供教学方案建议。',
+        context: '基于学生的学习需求和教学现状，提供教学建议，包括教学方法、课程安排、学习指导等。',
+        example: '学生需求："理解量子物理波粒二象性"\n建议："建议采用三步教学法：1)通过双缝实验视频建立直观认知；2)用光电效应实验理解粒子性；3)通过计算题巩固理解。预计需要4课时，建议准备实验材料。"'
+      }
+    }
 
+    if (!scenario || !scenarioPrompts[scenario]) {
+      throw new Error(`无效的场景类型: ${scenario}`)
+    }
+    const prompt = scenarioPrompts[scenario]
+    
+    // 构建聊天历史上下文
+    let chatContext = ''
+    if (chatHistory && chatHistory.length > 0) {
+      chatContext = '\n\n对话历史：\n' + 
+        chatHistory.slice(-4).map((msg, index) => {
+          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          return `${index + 1}. ${role}: ${msg.text}`
+        }).join('\n')
+    }
+    
+    const comprehensivePrompt = [
+      {
+        role: 'system',
+        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成建议的指导原则：\n1. 基于当前对话内容，提供具体可行的建议\n2. 考虑企业能力和资源限制\n3. 提供多个选项供企业选择\n4. 包含具体的实施步骤和预期效果\n5. 避免过于理论化的建议，注重实用性\n6. 风格限制：禁止输出任何客服模板话术或联系/投诉引导语，只专注于专业建议与实施细节。`
+      },
+      {
+        role: 'user',
+        content: `当前对话内容："${content}"${chatContext}\n\n请为企业提供专业的建议，包括：\n\n【核心建议】\n基于当前情况的主要建议\n\n【具体方案】\n提供2-3个具体的实施方案\n\n【实施要点】\n关键的实施步骤和注意事项`
+      }
+    ]
+    
+    const resultRaw = await callModelScopeAPI(comprehensivePrompt, 0.3)
+    const result = sanitizeOutput(resultRaw)
+
+    // 解析结构化输出
+    const coreSuggestionMatch = result.match(/【核心建议】\s*([\s\S]*?)(?=【具体方案】|$)/)
+    const specificPlansMatch = result.match(/【具体方案】\s*([\s\S]*?)(?=【实施要点】|$)/)
+    const implementationMatch = result.match(/【实施要点】\s*([\s\S]*?)$/)
+    
+    const coreSuggestion = coreSuggestionMatch ? coreSuggestionMatch[1].trim() : result
+    const specificPlans = specificPlansMatch ? specificPlansMatch[1].trim() : ''
+    const implementation = implementationMatch ? implementationMatch[1].trim() : ''
+
+    // 构建步骤显示
+    const steps = [
+      {
+        name: '核心建议',
+        content: coreSuggestion
+      }
+    ]
+    
+    if (specificPlans) {
+      steps.push({
+        name: '具体方案',
+        content: specificPlans
+      })
+    }
+    
+    if (implementation) {
+      steps.push({
+        name: '实施要点',
+        content: implementation
+      })
+    }
+
+    // 构建完整的建议消息
+    let suggestionMessage = coreSuggestion
+    if (specificPlans) {
+      suggestionMessage += '\n\n' + specificPlans
+    }
+    if (implementation) {
+      suggestionMessage += '\n\n' + implementation
+    }
+
+    console.groupCollapsed('[LLM] Parsed -> generate_suggestion')
+    console.log('structuredOutput:', { coreSuggestion, specificPlans, implementation })
+    console.log('suggestionMessage:', truncateForLog(suggestionMessage))
+    console.groupEnd()
+
+    return {
+      steps,
+      suggestionMessage,
+      structuredOutput: {
+        coreSuggestion,
+        specificPlans,
+        implementation
+      }
+    }
+  } catch (error) {
+    console.error('生成企业建议时出错:', error)
+    throw error
+  }
+}
+
+// 新增：生成企业端追问
+const generateEnterpriseFollowUp = async (content, scenario, chatHistory = []) => {
+  try {
+    const scenarioPrompts = {
+      retail: {
+        systemRole: '你是一位专业的零售销售专家，专门帮助企业了解客户需求的关键信息。',
+        context: '基于当前对话，识别需要进一步了解的关键信息，生成有针对性的追问。',
+        example: '客户说："需要商务西装"\n追问："请问您的具体使用场合是什么？预算范围大概是多少？您的身高体重是多少？对颜色和款式有什么偏好吗？"'
+      },
+      enterprise: {
+        systemRole: '你是一位专业的企业需求分析师，专门帮助技术团队深入了解业务需求。',
+        context: '基于当前对话，识别技术实现需要的关键信息，生成有针对性的追问。',
+        example: '业务方说："需要提升用户体验"\n追问："具体希望提升哪些方面的体验？目标用户群体是谁？当前的痛点是什么？有具体的时间要求吗？预算范围是多少？"'
+      },
+      education: {
+        systemRole: '你是一位专业的教育需求分析师，专门帮助教师了解学生的学习情况。',
+        context: '基于当前对话，识别教学需要的关键信息，生成有针对性的追问。',
+        example: '学生说："不懂这个概念"\n追问："您之前学过相关的基础知识吗？您更倾向于哪种学习方式？您希望达到什么样的理解程度？有什么具体的学习目标吗？"'
+      }
+    }
+
+    if (!scenario || !scenarioPrompts[scenario]) {
+      throw new Error(`无效的场景类型: ${scenario}`)
+    }
+    const prompt = scenarioPrompts[scenario]
+    
+    // 构建聊天历史上下文
+    let chatContext = ''
+    if (chatHistory && chatHistory.length > 0) {
+      chatContext = '\n\n对话历史：\n' + 
+        chatHistory.slice(-4).map((msg, index) => {
+          const role = msg.type === 'user' ? '客户' : msg.type === 'ai_response' ? '企业回复' : msg.type === 'llm_request' ? '需求转译' : 'AI处理'
+          return `${index + 1}. ${role}: ${msg.text}`
+        }).join('\n')
+    }
+    
+    const comprehensivePrompt = [
+      {
+        role: 'system',
+        content: `${prompt.systemRole}\n\n${prompt.context}\n\n${prompt.example}\n\n生成追问的指导原则：\n1. 基于当前对话内容，识别信息缺口\n2. 生成3-5个有针对性的追问\n3. 追问要具体、明确，避免模糊表达\n4. 按照重要性排序\n5. 使用友好的语气，避免过于直接\n6. 风格限制：禁止输出“感谢您的反馈/我们非常重视/如需帮助请联系”等客服模板话术，只专注于针对性信息澄清。`
+      },
+      {
+        role: 'user',
+        content: `当前对话内容："${content}"${chatContext}\n\n请生成有针对性的追问，帮助更好地了解需求：\n\n【关键信息缺口】\n识别当前对话中缺失的关键信息\n\n【追问建议】\n提供3-5个具体的追问问题\n\n【追问策略】\n建议的追问顺序和方式`
+      }
+    ]
+    
+    const resultRaw = await callModelScopeAPI(comprehensivePrompt, 0.3)
+    const result = sanitizeOutput(resultRaw)
+
+    // 解析结构化输出
+    const infoGapsMatch = result.match(/【关键信息缺口】\s*([\s\S]*?)(?=【追问建议】|$)/)
+    const followUpQuestionsMatch = result.match(/【追问建议】\s*([\s\S]*?)(?=【追问策略】|$)/)
+    const strategyMatch = result.match(/【追问策略】\s*([\s\S]*?)$/)
+    
+    const infoGaps = infoGapsMatch ? infoGapsMatch[1].trim() : ''
+    const followUpQuestions = followUpQuestionsMatch ? followUpQuestionsMatch[1].trim() : result
+    const strategy = strategyMatch ? strategyMatch[1].trim() : ''
+
+    // 构建步骤显示
+    const steps = [
+      {
+        name: '信息缺口分析',
+        content: infoGaps || '基于当前对话分析需要进一步了解的信息'
+      }
+    ]
+    
+    if (followUpQuestions) {
+      steps.push({
+        name: '追问建议',
+        content: followUpQuestions
+      })
+    }
+    
+    if (strategy) {
+      steps.push({
+        name: '追问策略',
+        content: strategy
+      })
+    }
+
+    // 构建完整的追问消息
+    let followUpMessage = followUpQuestions
+    if (strategy) {
+      followUpMessage += '\n\n' + strategy
+    }
+
+    console.groupCollapsed('[LLM] Parsed -> generate_followup')
+    console.log('structuredOutput:', { infoGaps, followUpQuestions, strategy })
+    console.log('followUpMessage:', truncateForLog(followUpMessage))
+    console.groupEnd()
+
+    return {
+      steps,
+      followUpMessage,
+      structuredOutput: {
+        infoGaps,
+        followUpQuestions,
+        strategy
+      }
+    }
+  } catch (error) {
+    console.error('生成企业追问时出错:', error)
+    throw error
+  }
+}
 
 // 辅助函数 - 保留用于向后兼容
 const analyzeContext = async (content) => {
@@ -261,12 +707,16 @@ const optimizeForUser = async (content) => {
 }
 
 // 主要的LLM处理函数
-export const processWithLLM = async ({ type, content, image, context, scenario }) => {
+export const processWithLLM = async ({ type, content, image, context, scenario, chatHistory = [] }) => {
   try {
     if (type === 'problem_input') {
-      return await processProblemInput(content, image, scenario)
+      return await processProblemInput(content, image, scenario, chatHistory)
     } else if (type === 'solution_response') {
-      return await processSolutionResponse(content, scenario)
+      return await processSolutionResponse(content, scenario, chatHistory)
+    } else if (type === 'generate_suggestion') {
+      return await generateEnterpriseSuggestion(content, scenario, chatHistory)
+    } else if (type === 'generate_followup') {
+      return await generateEnterpriseFollowUp(content, scenario, chatHistory)
     }
     
     throw new Error('未知的处理类型')
@@ -283,5 +733,7 @@ export {
   conceptualize,
   detectMissingInfo,
   translateToSolution,
-  optimizeForUser
+  optimizeForUser,
+  generateEnterpriseSuggestion,
+  generateEnterpriseFollowUp
 }

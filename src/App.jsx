@@ -65,8 +65,15 @@ function App() {
   const {
     messages,
     llmProcessing,
+    iterationProcessing,
+    iterationMode,
+    pendingResponse,
     sendProblemMessage,
     sendSolutionMessage,
+    generateSuggestion,
+    generateFollowUp,
+    confirmSendResponse,
+    cancelIteration,
     clearMessages
   } = useMessageFlow(currentScenario)
   
@@ -280,8 +287,15 @@ function App() {
                   messages={messages.solution}
                   onSendMessage={sendSolutionMessage}
                   isProcessing={llmProcessing}
+                  iterationMode={iterationMode}
+                  pendingResponse={pendingResponse}
+                  onGenerateSuggestion={generateSuggestion}
+                  onGenerateFollowUp={generateFollowUp}
+                  onConfirmSend={confirmSendResponse}
+                  onCancelIteration={cancelIteration}
                   inputRef={solutionInputRef}
                   settings={settings}
+                  iterationProcessing={iterationProcessing}
                 />
               </div>
             </AnimatedTransition>

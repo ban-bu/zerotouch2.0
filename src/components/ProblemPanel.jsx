@@ -101,7 +101,10 @@ const ProblemPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
                   <div className="flex items-start space-x-2">
                     <User className="w-4 h-4 text-white mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="whitespace-pre-wrap">{message.text}</p>
+                      {/* [MODIFIED] 为单条长消息提供滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap">{message.text}</p>
+                      </div>
                       <div className="text-xs text-blue-100 mt-1 opacity-75">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
@@ -117,7 +120,10 @@ const ProblemPanel = ({ scenario, messages, onSendMessage, isProcessing }) => {
                   <div className="flex items-start space-x-2">
                     <Bot className="w-4 h-4 text-gray-600 dark:text-gray-400 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="whitespace-pre-wrap">{message.text}</p>
+                      {/* [MODIFIED] 为单条长消息提供滚动容器 */}
+                      <div className="message-content">
+                        <p className="whitespace-pre-wrap">{message.text}</p>
+                      </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
